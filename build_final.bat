@@ -25,10 +25,10 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-REM Compile source file - Ensure Windows XP compatibility
-echo Compiling spcmd.c ...
+REM Compile source files - Ensure Windows XP compatibility
+echo Compiling source files ...
 echo Using Windows XP compatibility mode with size optimization...
-gcc -Wall -Wextra -std=c99 -Os -D_WIN32_WINNT=0x0501 -s -fno-unwind-tables -fno-asynchronous-unwind-tables spcmd.c -o spcmd.exe -lgdi32 -luser32 -lshell32 -lole32
+gcc -Wall -Wextra -std=c99 -Os -D_WIN32_WINNT=0x0501 -s -fno-unwind-tables -fno-asynchronous-unwind-tables spcmd_main.c window.c screenshot.c commands.c -o spcmd.exe -lgdi32 -luser32 -lshell32 -lole32 -lshlwapi
 
 REM Check if compilation was successful
 if %errorlevel% neq 0 (

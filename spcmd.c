@@ -1433,7 +1433,7 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
     }
     
     // 调试输出
-    printf("Debug: noDrag = %s\n", noDrag ? "TRUE" : "FALSE");
+    
 
     // 处理命令行参数中的换行符（将\\n替换为\n）
     char* processedMessage = (char*)malloc(strlen(message) * 2 + 1);
@@ -1496,12 +1496,6 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
         x, y, width, height,
         NULL, NULL, GetModuleHandle(NULL), params);
     
-    // 调试输出窗口样式
-    if (noDrag) {
-        printf("Debug: Created window without caption (no drag)\n");
-    } else {
-        printf("Debug: Created window with caption (allow drag)\n");
-    }
 
     // 消息循环
     MSG msg;
@@ -1522,6 +1516,5 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
     free(params);
     free(processedMessage);
     
-    printf("Custom window displayed\n");
 }
 
