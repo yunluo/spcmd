@@ -1256,7 +1256,7 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 SelectObject(hdc, hFont);
             }
             
-            // 直接使用原始文本，不需要额外处理换行符
+            // 直接使用处理后的文本
             char* displayText = params->text;
             
             // 计算文本绘制区域以实现真正的垂直居中
@@ -1430,6 +1430,19 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
         return;
     }
     
+    // 处理命令行参数中的换行符（将\\n替换为\n）
+    char* processedMessage = (char*)malloc(strlen(message) * 2 + 1);
+    int j = 0;
+    for (int i = 0; message[i] != '\0'; i++) {
+        if (message[i] == '\\' && message[i+1] == 'n') {
+            processedMessage[j++] = '\n';
+            i++; // 跳过'n'
+        } else {
+            processedMessage[j++] = message[i];
+        }
+    }
+    processedMessage[j] = '\0';
+    
     // 如果是模态弹窗，禁用所有其他窗口
     if (modal) {
         EnumWindows(EnumWindowsProcDisable, (LPARAM)NULL);
@@ -1439,11 +1452,12 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
     WindowParams* params = (WindowParams*)malloc(sizeof(WindowParams));
     if (!params) {
         printf("Error: Memory allocation failed.\n");
+        free(processedMessage);
         return;
     }
     
     // 初始化参数
-    params->text = message;
+    params->text = processedMessage;
     params->fontSize = fontSize;
     params->bgColor = bgColor;
     params->textColor = textColor;
@@ -1492,6 +1506,7 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
     
     // 清理资源
     free(params);
+    free(processedMessage);
     
     printf("Custom window displayed\n");
 }
