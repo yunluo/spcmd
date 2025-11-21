@@ -1204,9 +1204,10 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 hFont = GetStockObject(DEFAULT_GUI_FONT);
             }
             
-            // 创建确认按钮，使用ANSI字符确保中文支持
-            hButton = CreateWindowA(
-                "BUTTON", "确定",
+            // 创建确认按钮，使用宽字符确保中文支持
+            wchar_t buttonText[] = L"确定";
+            hButton = CreateWindowW(
+                L"BUTTON", buttonText,
                 WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
                 0, 0, 80, 30,
                 hwnd, (HMENU)1, pcs->hInstance, NULL);
@@ -1215,9 +1216,6 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             if (hFont) {
                 SendMessage(hButton, WM_SETFONT, (WPARAM)hFont, TRUE);
             }
-            
-            // 确保按钮使用正确的字符集
-            SendMessageA(hButton, WM_SETTEXT, 0, (LPARAM)"确定");
             
             break;
         }
