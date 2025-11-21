@@ -1188,14 +1188,17 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             CREATESTRUCT* pcs = (CREATESTRUCT*)lParam;
             params = (WindowParams*)pcs->lpCreateParams;
             
-            // 初始化文字颜色为黑色（如果未指定）
-            if (params->textColor == 0) {
-                params->textColor = RGB(0, 0, 0); // 默认黑色
+            // 调试输出
+            if (params) {
+                // 初始化文字颜色为黑色（如果未指定）
+                if (params->textColor == 0) {
+                    params->textColor = RGB(0, 0, 0); // 默认黑色
+                }
             }
             
             // 创建字体，使用系统默认字体以确保中文支持
             hFont = CreateFontA(
-                params->fontSize, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                params ? params->fontSize : 18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                 DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Microsoft Sans Serif");
             
@@ -1312,11 +1315,10 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         case WM_NCHITTEST: {
             // 如果禁止拖拽，阻止窗口移动
             if (params && params->noDrag) {
-                LRESULT hit = DefWindowProc(hwnd, msg, wParam, lParam);
-                if (hit == HTCAPTION) {
-                    return HTCLIENT;
-                }
-                return hit;
+                // 调试输出
+                // printf("Debug: Blocking drag, returning HTCLIENT\n");
+                // 直接返回HTCLIENT，阻止标题栏拖拽
+                return HTCLIENT;
             }
             return DefWindowProc(hwnd, msg, wParam, lParam);
         }
@@ -1430,6 +1432,9 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
         return;
     }
     
+    // 调试输出
+    printf("Debug: noDrag = %s\n", noDrag ? "TRUE" : "FALSE");
+
     // 处理命令行参数中的换行符（将\\n替换为\n）
     char* processedMessage = (char*)malloc(strlen(message) * 2 + 1);
     int j = 0;
@@ -1442,12 +1447,12 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
         }
     }
     processedMessage[j] = '\0';
-    
+
     // 如果是模态弹窗，禁用所有其他窗口
     if (modal) {
         EnumWindows(EnumWindowsProcDisable, (LPARAM)NULL);
     }
-    
+
     // 创建窗口参数结构
     WindowParams* params = (WindowParams*)malloc(sizeof(WindowParams));
     if (!params) {
@@ -1485,10 +1490,19 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
         WS_EX_TOPMOST | WS_EX_APPWINDOW, // 强制顶层显示
         "WindowClass",
         title, // 直接使用标题
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+        noDrag ? 
+            (WS_POPUP | WS_SYSMENU | WS_VISIBLE) :  // 禁止拖拽时使用弹出窗口样式
+            (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE),  // 正常情况显示标题栏
         x, y, width, height,
         NULL, NULL, GetModuleHandle(NULL), params);
     
+    // 调试输出窗口样式
+    if (noDrag) {
+        printf("Debug: Created window without caption (no drag)\n");
+    } else {
+        printf("Debug: Created window with caption (allow drag)\n");
+    }
+
     // 消息循环
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0)) {
