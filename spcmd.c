@@ -16,6 +16,8 @@
 #define _WIN32_IE 0x0500
 #define COBJMACROS
 #define INITGUID
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 #include <objbase.h>
 #include <shellapi.h> // 添加这个头文件以支持图标提取
 #include <shlobj.h>
@@ -55,10 +57,13 @@ void cmd_service(int argc, char *argv[]);
 void cmd_task(int argc, char *argv[]);
 void cmd_restart(int argc, char *argv[]);
 void cmd_window(int argc, char *argv[]);
-void save_as_png(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
-                 int quality);
+
+
+
 void save_as_base64_data(const char *bitmap_data, DWORD data_size,
                          const char *filename);
+int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename, 
+                          const char *format, int quality);
 // 系统变量解析函数声明
 char *resolve_system_variables(const char *input);
 
@@ -83,7 +88,7 @@ int main(int argc, char *argv[]) {
   SetConsoleCP(CP_UTF8);
 
   // 如果没有参数或第一个参数是帮助相关的，则显示帮助信息
-  if (argc < 2 || strcmp(argv[1], "/help") == 0 || strcmp(argv[1], "-h") == 0) {
+  if (argc < 2 || strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "--h") == 0) {
     show_help();
     return 0;
   }
@@ -96,7 +101,6 @@ int main(int argc, char *argv[]) {
 
 void show_help() {
   printf("                                                                               \n");
-  printf("                                                                               \n");
   printf("       oooooo  o ooooooooo       oooooo    ooo        ooooo oooooooooo         \n");
   printf("     d8P'    `Y8 `888   `Y88   d8P'  `Y8b  `88         888' `888'   `Y8b       \n");
   printf("     Y88bo        888    d88' 888           888b     d'888   888      888      \n");
@@ -105,7 +109,7 @@ void show_help() {
   printf("     oo      d8P  888         `88b    ooo   8    Y     888   888     d88'      \n");
   printf("     8""88888P'    o888o         `Y8bood8P'  o8o        o888o o888bood8P'        \n");
   printf("                                                                               \n");
-  printf("                                                                               \n");
+  printf("==========================================================================\n");
   printf("SPCMD - System Power Command Tool\n");
   printf("Usage: spcmd <command> [parameters]\n\n");
   printf("Supported commands:\n");
@@ -120,18 +124,7 @@ void show_help() {
   printf("  service               - Create system service\n");
   printf("  task                  - Create scheduled task\n");
   printf("  restart               - Restart specified process\n");
-  printf("\nExamples:\n");
-  printf("  spcmd screenshot\n");
-  printf("  spcmd shortcut --target=C:\\Windows\\notepad.exe\n");
-  printf("  spcmd infobox \"This is a message box!\" \"Message\"\n");
-  printf("  spcmd infoboxtop \"This is a top-most message box!\" \"Top-Most "
-         "Message\"\n");
-  printf(
-      "  spcmd qbox \"Do you want to run calc?\" \"Question\" \"calc.exe\"\n");
-  printf("  spcmd window --text=\"Hello World\" --title=\"Custom Window\"\n");
-  printf("  spcmd exec2 show \"f:\\winnt\\system32\" "
-         "\"f:\\winnt\\system32\\calc.exe\"\n");
-  printf("  spcmd exec2 hide c:\\temp \"c:\\temp\\wul.exe\"\n");
+  printf("  updater               - Check for updates and download new version\n");
   printf("\nType spcmd <command> --help for specific command help\n");
 }
 
@@ -192,14 +185,13 @@ void cmd_screenshot(int argc, char *argv[]) {
   if (argc > 2 &&
       (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("Screenshot command help:\n");
-    printf("  spcmd screenshot [--save=path] [--fullscreen] [--active] "
+    printf("  spcmd screenshot [--save=path] [--fullscreen] "
            "[--format=png|bmp] [--base64=file] [--quality=value]\n\n");
     printf("Parameter description:\n");
     printf("  --save=path       - Save screenshot to specified path, default "
            "to current directory\n");
     printf("  --fullscreen      - Capture full screen (default)\n");
-    printf("  --active          - Capture active window\n");
-    printf("  --format=png|bmp  - Save format, default is bmp\n");
+    printf("  --format=png|jpg|bmp  - Save format, default is bmp\n");
     printf("  --base64=file     - Save as Base64 encoded data to specified "
            "file\n");
     printf("  --quality=value   - Image quality for PNG (1-100), default is "
@@ -207,10 +199,10 @@ void cmd_screenshot(int argc, char *argv[]) {
     printf("Examples:\n");
     printf("  spcmd screenshot\n");
     printf("  spcmd screenshot --save=C:\\screenshots\\screen.png\n");
-    printf("  spcmd screenshot --active\n");
     printf("  spcmd screenshot --format=png\n");
+    printf("  spcmd screenshot --format=jpg\n");
     printf("  spcmd screenshot --base64=screenshot.b64\n");
-    printf("  spcmd screenshot --format=png --quality=80\n");
+    printf("  spcmd screenshot --quality=80\n");
     return;
   }
 
@@ -246,38 +238,9 @@ void cmd_screenshot(int argc, char *argv[]) {
   // Select bitmap to memory DC
   HBITMAP hOldBitmap = (HBITMAP)SelectObject(hMemoryDC, hBitmap);
 
-  // Check if capturing active window
-  BOOL captureActiveWindow = FALSE;
-  for (int i = 2; i < argc; i++) {
-    if (strcmp(argv[i], "/active") == 0) {
-      captureActiveWindow = TRUE;
-      break;
-    }
-  }
-
-  if (captureActiveWindow) {
-    // Capture active window
-    HWND hwnd = GetForegroundWindow();
-    if (hwnd != NULL) {
-      RECT rc;
-      GetWindowRect(hwnd, &rc);
-      int width = rc.right - rc.left;
-      int height = rc.bottom - rc.top;
-
-      // Resize bitmap to active window size
-      DeleteObject(hBitmap);
-      hBitmap = CreateCompatibleBitmap(hScreenDC, width, height);
-      SelectObject(hMemoryDC, hBitmap);
-
-      // Copy active window to memory DC
-      BitBlt(hMemoryDC, 0, 0, width, height, hScreenDC, rc.left, rc.top,
-             SRCCOPY);
-    }
-  } else {
-    // Capture full screen
-    BitBlt(hMemoryDC, 0, 0, screenWidth, screenHeight, hScreenDC, 0, 0,
-           SRCCOPY);
-  }
+  // Capture full screen (default behavior)
+  BitBlt(hMemoryDC, 0, 0, screenWidth, screenHeight, hScreenDC, 0, 0,
+         SRCCOPY);
 
   // Restore old bitmap
   SelectObject(hMemoryDC, hOldBitmap);
@@ -291,15 +254,16 @@ void cmd_screenshot(int argc, char *argv[]) {
 
   for (int i = 2; i < argc; i++) {
     if (strncmp(argv[i], "--save=", 7) == 0) {
-      strncpy(filename, argv[i] + 6, MAX_PATH - 1);
+      strncpy(filename, argv[i] + 7, MAX_PATH - 1);
       filename[MAX_PATH - 1] = '\0';
     } else if (strncmp(argv[i], "--format=", 9) == 0) {
-      strncpy(format, argv[i] + 8, sizeof(format) - 1);
+      strncpy(format, argv[i] + 9, sizeof(format) - 1);
       format[sizeof(format) - 1] = '\0';
     } else if (strncmp(argv[i], "--base64=", 9) == 0) {
-      strncpy(base64_filename, argv[i] + 8, MAX_PATH - 1);
+      strncpy(base64_filename, argv[i] + 9, MAX_PATH - 1);
       base64_filename[MAX_PATH - 1] = '\0';
       save_as_base64 = TRUE;
+    // --active parameter is deprecated
     } else if (strncmp(argv[i], "--quality=", 10) == 0) {
       quality = atoi(argv[i] + 9);
       // Ensure quality is between 1 and 100
@@ -341,6 +305,7 @@ void cmd_screenshot(int argc, char *argv[]) {
     GlobalFree(hDIB);
   } else {
     // Save bitmap in the specified format
+    // Ensure filename has correct extension
     if (strcmp(format, "png") == 0 || strcmp(format, "PNG") == 0) {
       // Ensure filename has .png extension
       if (strstr(filename, ".bmp")) {
@@ -353,57 +318,44 @@ void cmd_screenshot(int argc, char *argv[]) {
         // Add .png extension if no extension
         strcat(filename, ".png");
       }
-      save_as_png(hBitmap, hScreenDC, filename, quality);
+    } else if (strcmp(format, "jpg") == 0 || strcmp(format, "JPG") == 0 || 
+               strcmp(format, "jpeg") == 0 || strcmp(format, "JPEG") == 0) {
+      // Ensure filename has .jpg extension
+      if (strstr(filename, ".bmp")) {
+        // Replace .bmp with .jpg
+        char *dot = strrchr(filename, '.');
+        if (dot) {
+          strcpy(dot, ".jpg");
+        }
+      } else if (!strstr(filename, ".jpg") && !strstr(filename, ".jpeg")) {
+        // Add .jpg extension if no extension
+        strcat(filename, ".jpg");
+      }
     } else {
       // Save as BMP (default)
-      // Save bitmap as BMP file
-      BITMAP bmp;
-      GetObject(hBitmap, sizeof(BITMAP), &bmp);
-
-      BITMAPINFOHEADER bi = {0};
-      bi.biSize = sizeof(BITMAPINFOHEADER);
-      bi.biWidth = bmp.bmWidth;
-      bi.biHeight = bmp.bmHeight;
-      bi.biPlanes = 1;
-      bi.biBitCount = 24;
-      bi.biCompression = BI_RGB;
-
-      DWORD dwBmpSize =
-          ((bmp.bmWidth * bi.biBitCount + 31) / 32) * 4 * bmp.bmHeight;
-      DWORD dwSizeofDIB =
-          dwBmpSize + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
-
-      BITMAPFILEHEADER bmfHeader = {0};
-      bmfHeader.bfOffBits =
-          (DWORD)sizeof(BITMAPFILEHEADER) + (DWORD)sizeof(BITMAPINFOHEADER);
-      bmfHeader.bfSize = dwSizeofDIB;
-      bmfHeader.bfType = 0x4D42; // BM
-
-      HANDLE hDIB = GlobalAlloc(GHND, dwBmpSize);
-      char *lpbitmap = (char *)GlobalLock(hDIB);
-
-      GetDIBits(hScreenDC, hBitmap, 0, (UINT)bmp.bmHeight, lpbitmap,
-                (BITMAPINFO *)&bi, DIB_RGB_COLORS);
-
-      HANDLE hFile = CreateFile(filename, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-                                FILE_ATTRIBUTE_NORMAL, NULL);
-      if (hFile != INVALID_HANDLE_VALUE) {
-        DWORD dwBytesWritten;
-        WriteFile(hFile, (LPSTR)&bmfHeader, sizeof(BITMAPFILEHEADER),
-                  &dwBytesWritten, NULL);
-        WriteFile(hFile, (LPSTR)&bi, sizeof(BITMAPINFOHEADER), &dwBytesWritten,
-                  NULL);
-        WriteFile(hFile, (LPSTR)lpbitmap, dwBmpSize, &dwBytesWritten, NULL);
-        CloseHandle(hFile);
-        printf("Screenshot saved to: %s\n", filename);
-      } else {
-        printf("Error: Unable to save screenshot to %s\n", filename);
+      // Ensure filename has .bmp extension
+      if (strstr(filename, ".png")) {
+        // Replace .png with .bmp
+        char *dot = strrchr(filename, '.');
+        if (dot) {
+          strcpy(dot, ".bmp");
+        }
+      } else if (strstr(filename, ".jpg") || strstr(filename, ".jpeg")) {
+        // Replace .jpg/.jpeg with .bmp
+        char *dot = strrchr(filename, '.');
+        if (dot) {
+          strcpy(dot, ".bmp");
+        }
+      } else if (!strstr(filename, ".bmp")) {
+        // Add .bmp extension if no extension
+        strcat(filename, ".bmp");
       }
-
-      // Clean up resources
-      GlobalUnlock(hDIB);
-      GlobalFree(hDIB);
+      // Use "bmp" as format for the save function
+      strcpy(format, "bmp");
     }
+    
+    // Use the new helper function to save the bitmap
+    save_bitmap_as_format(hBitmap, hScreenDC, filename, format, quality);
   }
 
   // Clean up resources
@@ -1221,129 +1173,126 @@ void cmd_qboxtop(int argc, char *argv[]) {
 }
 
 // 添加PNG保存函数
-void save_as_png(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
-                 int quality) {
-  // 如果质量设置低于100，则调整图像尺寸以减小文件大小
+// 已移除，直接在cmd_screenshot函数中使用stb_image_write.h的函数
+
+// 保存为BMP格式
+// 已移除，直接在cmd_screenshot函数中使用stb_image_write.h的函数
+
+// 保存为JPEG格式
+// 已移除，直接在cmd_screenshot函数中使用stb_image_write.h的函数
+
+// 辅助函数：从HBITMAP获取图像数据并保存为指定格式
+int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename, 
+                          const char *format, int quality) {
+  // 获取BITMAP信息
   BITMAP bmp;
   GetObject(hBitmap, sizeof(BITMAP), &bmp);
-
+  
+  // 根据质量设置调整尺寸以减小文件大小
   int width = bmp.bmWidth;
   int height = bmp.bmHeight;
-
-  // 根据质量设置调整尺寸
+  
   if (quality < 100) {
     double scale = quality / 100.0;
     width = (int)(width * scale);
     height = (int)(height * scale);
-
-    // 创建缩放后的bitmap
-    HDC hMemoryDC = CreateCompatibleDC(hScreenDC);
-    HBITMAP hScaledBitmap = CreateCompatibleBitmap(hScreenDC, width, height);
-    HBITMAP hOldBitmap = (HBITMAP)SelectObject(hMemoryDC, hScaledBitmap);
-
+  }
+  
+  // 创建缩放后的bitmap（如果需要）
+  HDC hMemoryDC = NULL;
+  HBITMAP hScaledBitmap = NULL;
+  HBITMAP hOldBitmap = NULL;
+  HBITMAP hBitmapToSave = hBitmap; // 默认使用原始bitmap
+  
+  if (width != bmp.bmWidth || height != bmp.bmHeight) {
+    // 需要缩放
+    hMemoryDC = CreateCompatibleDC(hScreenDC);
+    hScaledBitmap = CreateCompatibleBitmap(hScreenDC, width, height);
+    hOldBitmap = (HBITMAP)SelectObject(hMemoryDC, hScaledBitmap);
+    
     // 缩放图像
     SetStretchBltMode(hMemoryDC, HALFTONE);
-    StretchBlt(hMemoryDC, 0, 0, width, height, hScreenDC, 0, 0, bmp.bmWidth,
+    StretchBlt(hMemoryDC, 0, 0, width, height, hScreenDC, 0, 0, bmp.bmWidth, 
                bmp.bmHeight, SRCCOPY);
+    
+    hBitmapToSave = hScaledBitmap;
+  }
+  
+  // 从bitmap获取数据
+  BITMAPINFOHEADER bi = {0};
+  bi.biSize = sizeof(BITMAPINFOHEADER);
+  bi.biWidth = width;
+  bi.biHeight = -height; // 负值表示顶部到底部的扫描线顺序
+  bi.biPlanes = 1;
+  bi.biBitCount = 24;
+  bi.biCompression = BI_RGB;
 
-    // 从缩放后的bitmap获取数据
-    BITMAPINFOHEADER bi = {0};
-    bi.biSize = sizeof(BITMAPINFOHEADER);
-    bi.biWidth = width;
-    bi.biHeight = height;
-    bi.biPlanes = 1;
-    bi.biBitCount = 24;
-    bi.biCompression = BI_RGB;
+  DWORD dwBmpSize = ((width * bi.biBitCount + 31) / 32) * 4 * height;
 
-    DWORD dwBmpSize = ((width * bi.biBitCount + 31) / 32) * 4 * height;
+  HANDLE hDIB = GlobalAlloc(GHND, dwBmpSize);
+  char *lpbitmap = (char *)GlobalLock(hDIB);
 
-    HANDLE hDIB = GlobalAlloc(GHND, dwBmpSize);
-    char *lpbitmap = (char *)GlobalLock(hDIB);
+  GetDIBits(hMemoryDC ? hMemoryDC : hScreenDC, hBitmapToSave, 0, (UINT)height, lpbitmap,
+            (BITMAPINFO *)&bi, DIB_RGB_COLORS);
 
-    GetDIBits(hMemoryDC, hScaledBitmap, 0, (UINT)height, lpbitmap,
-              (BITMAPINFO *)&bi, DIB_RGB_COLORS);
+  // 调整RGB顺序以修复颜色发黄问题
+  for (int i = 0; i < width * height * 3; i += 3) {
+    // 交换红色和蓝色通道 (BGR -> RGB)
+    char temp = lpbitmap[i];
+    lpbitmap[i] = lpbitmap[i + 2];
+    lpbitmap[i + 2] = temp;
+  }
 
-    // 保存为BMP格式（带.png扩展名）
-    BITMAPFILEHEADER bmfHeader = {0};
-    DWORD dwSizeofDIB =
-        dwBmpSize + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
-    bmfHeader.bfOffBits =
-        (DWORD)sizeof(BITMAPFILEHEADER) + (DWORD)sizeof(BITMAPINFOHEADER);
-    bmfHeader.bfSize = dwSizeofDIB;
-    bmfHeader.bfType = 0x4D42; // BM
-
-    HANDLE hFile = CreateFile(filename, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-                              FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile != INVALID_HANDLE_VALUE) {
-      DWORD dwBytesWritten;
-      WriteFile(hFile, (LPSTR)&bmfHeader, sizeof(BITMAPFILEHEADER),
-                &dwBytesWritten, NULL);
-      WriteFile(hFile, (LPSTR)&bi, sizeof(BITMAPINFOHEADER), &dwBytesWritten,
-                NULL);
-      WriteFile(hFile, (LPSTR)lpbitmap, dwBmpSize, &dwBytesWritten, NULL);
-      CloseHandle(hFile);
-      printf("Screenshot saved to: %s (scaled to %dx%d)\n", filename, width,
-             height);
-    } else {
-      printf("Error: Unable to save screenshot to %s\n", filename);
+  // 使用stb_image_write保存为指定格式
+  int result = 0;
+  if (strcmp(format, "png") == 0 || strcmp(format, "PNG") == 0) {
+    result = stbi_write_png(filename, width, height, 3, lpbitmap, width * 3);
+    if (result) {
+      if (width != bmp.bmWidth || height != bmp.bmHeight) {
+        printf("Screenshot saved to: %s (scaled to %dx%d, as PNG format)\n", 
+               filename, width, height);
+      } else {
+        printf("Screenshot saved to: %s (as PNG format)\n", filename);
+      }
     }
+  } else if (strcmp(format, "jpg") == 0 || strcmp(format, "JPG") == 0 || 
+             strcmp(format, "jpeg") == 0 || strcmp(format, "JPEG") == 0) {
+    result = stbi_write_jpg(filename, width, height, 3, lpbitmap, quality);
+    if (result) {
+      if (width != bmp.bmWidth || height != bmp.bmHeight) {
+        printf("Screenshot saved to: %s (scaled to %dx%d, as JPEG format)\n", 
+               filename, width, height);
+      } else {
+        printf("Screenshot saved to: %s (as JPEG format)\n", filename);
+      }
+    }
+  } else { // 默认保存为BMP格式
+    result = stbi_write_bmp(filename, width, height, 3, lpbitmap);
+    if (result) {
+      if (width != bmp.bmWidth || height != bmp.bmHeight) {
+        printf("Screenshot saved to: %s (scaled to %dx%d, as BMP format)\n", 
+               filename, width, height);
+      } else {
+        printf("Screenshot saved to: %s (as BMP format)\n", filename);
+      }
+    }
+  }
+  
+  if (!result) {
+    printf("Error: Unable to save screenshot to %s\n", filename);
+  }
 
-    // Clean up resources
-    GlobalUnlock(hDIB);
-    GlobalFree(hDIB);
+  // Clean up resources
+  GlobalUnlock(hDIB);
+  GlobalFree(hDIB);
+  
+  if (hScaledBitmap) {
     SelectObject(hMemoryDC, hOldBitmap);
     DeleteObject(hScaledBitmap);
     DeleteDC(hMemoryDC);
-  } else {
-    // 保存为原始尺寸的BMP格式（带.png扩展名）
-    printf("Note: Full PNG format support requires external libraries.\n");
-    printf("Saving as BMP with .png extension: %s\n", filename);
-
-    BITMAPINFOHEADER bi = {0};
-    bi.biSize = sizeof(BITMAPINFOHEADER);
-    bi.biWidth = bmp.bmWidth;
-    bi.biHeight = bmp.bmHeight;
-    bi.biPlanes = 1;
-    bi.biBitCount = 24;
-    bi.biCompression = BI_RGB;
-
-    DWORD dwBmpSize =
-        ((bmp.bmWidth * bi.biBitCount + 31) / 32) * 4 * bmp.bmHeight;
-    DWORD dwSizeofDIB =
-        dwBmpSize + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
-
-    BITMAPFILEHEADER bmfHeader = {0};
-    bmfHeader.bfOffBits =
-        (DWORD)sizeof(BITMAPFILEHEADER) + (DWORD)sizeof(BITMAPINFOHEADER);
-    bmfHeader.bfSize = dwSizeofDIB;
-    bmfHeader.bfType = 0x4D42; // BM
-
-    HANDLE hDIB = GlobalAlloc(GHND, dwBmpSize);
-    char *lpbitmap = (char *)GlobalLock(hDIB);
-
-    GetDIBits(hScreenDC, hBitmap, 0, (UINT)bmp.bmHeight, lpbitmap,
-              (BITMAPINFO *)&bi, DIB_RGB_COLORS);
-
-    HANDLE hFile = CreateFile(filename, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-                              FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile != INVALID_HANDLE_VALUE) {
-      DWORD dwBytesWritten;
-      WriteFile(hFile, (LPSTR)&bmfHeader, sizeof(BITMAPFILEHEADER),
-                &dwBytesWritten, NULL);
-      WriteFile(hFile, (LPSTR)&bi, sizeof(BITMAPINFOHEADER), &dwBytesWritten,
-                NULL);
-      WriteFile(hFile, (LPSTR)lpbitmap, dwBmpSize, &dwBytesWritten, NULL);
-      CloseHandle(hFile);
-      printf("Screenshot saved to: %s (as BMP data with PNG extension)\n",
-             filename);
-    } else {
-      printf("Error: Unable to save screenshot to %s\n", filename);
-    }
-
-    // Clean up resources
-    GlobalUnlock(hDIB);
-    GlobalFree(hDIB);
   }
+  
+  return result;
 }
 
 // 添加Base64编码函数

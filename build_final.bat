@@ -28,7 +28,7 @@ if %errorlevel% neq 0 (
 REM Compile source files - Ensure Windows XP compatibility
 echo Compiling source files ...
 echo Using Windows XP compatibility mode with size optimization...
-gcc-xp -Wall -Wextra -std=c99 -m32 -Os -D_WIN32_WINNT=0x0501 -DWINVER=0x0501 -D_WIN32_IE=0x0500 -s -fno-unwind-tables -fno-asynchronous-unwind-tables -mwindows -mconsole spcmd.c -o spcmd.exe -lgdi32 -luser32 -lshell32 -lole32 -lshlwapi -lcomctl32
+gcc-xp -Wall -Wextra -std=c99 -m32 -Os -D_WIN32_WINNT=0x0501 -DWINVER=0x0501 -D_WIN32_IE=0x0500 -s -fno-unwind-tables -fno-asynchronous-unwind-tables -mwindows -mconsole spcmd.c -o spcmd.exe -lgdi32 -luser32 -lshell32 -lole32 -lshlwapi
 
 REM Check if compilation was successful
 if %errorlevel% neq 0 (
