@@ -53,3 +53,4 @@ if exist spcmd.exe (
 
 copy spcmd.exe D:\VM\VM_PATH\ >nul 2>&1
 echo.
+pause
