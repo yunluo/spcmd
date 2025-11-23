@@ -57,6 +57,7 @@ void cmd_service(int argc, char *argv[]);
 void cmd_task(int argc, char *argv[]);
 void cmd_restart(int argc, char *argv[]);
 void cmd_window(int argc, char *argv[]);
+void cmd_notify(int argc, char *argv[]);
 void save_as_base64_data(const char *bitmap_data, DWORD data_size, const char *filename);
 int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename, const char *format, int quality);
 // 系统变量解析函数声明
@@ -114,11 +115,11 @@ void show_help() {
   printf("  autorun               - Configure auto-start\n");
   printf("  infoboxtop            - Display top-most message box\n");
   printf("  qboxtop               - Display top-most question dialog box\n");
-  printf("  window                - Display custom window with advanced "
-         "features\n");
+  printf("  window                - Display custom window with advanced features\n");
   printf("  exec2                 - Execute application with working folder\n");
   printf("  task                  - Create scheduled task\n");
   printf("  restart               - Restart specified process\n");
+  printf("  notify                - Display system notification\n");
   printf("\nType spcmd <command> --help for specific command help\n");
 }
 
@@ -156,6 +157,8 @@ void handle_command(int argc, char *argv[]) {
     cmd_task(argc, resolved_argv);
   } else if (strcmp(resolved_argv[1], "restart") == 0) {
     cmd_restart(argc, resolved_argv);
+  } else if (strcmp(resolved_argv[1], "notify") == 0) {
+    cmd_notify(argc, resolved_argv);
   } else {
     printf("Unknown command: %s\n", resolved_argv[1]);
     show_help();
@@ -2184,16 +2187,190 @@ BOOL ElevatePrivileges(int argc, char *argv[]) {
 
   // 等待新进程完成
   WaitForSingleObject(sei.hProcess, INFINITE);
-
   // 获取退出代码
   DWORD exitCode;
   GetExitCodeProcess(sei.hProcess, &exitCode);
 
   // 关闭进程句柄
   CloseHandle(sei.hProcess);
-
   // 退出当前进程
   ExitProcess(exitCode);
 
   return TRUE;
+}
+
+void cmd_notify(int argc, char *argv[]) {
+  // Check if help is needed
+  if (argc > 2 &&
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
+    printf("Notify command help:\n");
+    printf("  spcmd notify --title=title --message=message [--icon=info|warning|error] [--timeout=seconds]\n\n");
+    printf("Parameter description:\n");
+    printf("  --title=title         - Notification title (required)\n");
+    printf("  --message=message     - Notification message (required)\n");
+    printf("  --icon=type           - Icon type: info, warning, error (default: info)\n");
+    printf("  --timeout=seconds     - Notification timeout in seconds (default: 5)\n\n");
+    printf("Examples:\n");
+    printf("  spcmd notify --title=\"System Update\" --message=\"Your system has been updated successfully.\"\n");
+    printf("  spcmd notify --title=\"Warning\" --message=\"Disk space is low.\" --icon=warning\n");
+    printf("  spcmd notify --title=\"Error\" --message=\"Application failed to start.\" --icon=error --timeout=10\n");
+    return;
+  }
+
+  // Parse parameters
+  char title[MAX_PATH] = {0};
+  char message[MAX_PATH * 2] = {0};
+  char iconType[20] = "info";  // default icon
+  int timeout = 5;  // default timeout in seconds
+
+  BOOL hasTitle = FALSE;
+  BOOL hasMessage = FALSE;
+
+  for (int i = 2; i < argc; i++) {
+    if (strncmp(argv[i], "--title=", 8) == 0) {
+      strncpy(title, argv[i] + 8, MAX_PATH - 1);
+      title[MAX_PATH - 1] = '\0';
+      hasTitle = TRUE;
+    } else if (strncmp(argv[i], "--message=", 10) == 0) {
+      strncpy(message, argv[i] + 10, MAX_PATH * 2 - 1);
+      message[MAX_PATH * 2 - 1] = '\0';
+      hasMessage = TRUE;
+    } else if (strncmp(argv[i], "--icon=", 7) == 0) {
+      strncpy(iconType, argv[i] + 7, sizeof(iconType) - 1);
+      iconType[sizeof(iconType) - 1] = '\0';
+    } else if (strncmp(argv[i], "--timeout=", 10) == 0) {
+      timeout = atoi(argv[i] + 10);
+      // Ensure timeout is reasonable
+      if (timeout < 1)
+        timeout = 1;
+      if (timeout > 60)
+        timeout = 60;
+    }
+  }
+
+  // Check required parameters
+  if (!hasTitle || !hasMessage) {
+    printf("Error: Title and message must be specified\n");
+    printf("Use spcmd notify --help for help\n");
+    return;
+  }
+
+  printf("Displaying notification: %s\n", title);
+
+  // 检查Windows版本以确定使用哪种通知方法
+  OSVERSIONINFO osvi;
+  ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
+  osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+  GetVersionEx(&osvi);
+  
+  BOOL isWindowsXP = (osvi.dwMajorVersion == 5 && osvi.dwMinorVersion == 1); // Windows XP是5.1版本
+  
+  if (isWindowsXP) {
+    // Windows XP兼容实现 - 使用MessageBox
+    printf("Using Windows XP compatible mode\n");
+    
+    // 确定消息框类型
+    UINT mbType = MB_OK | MB_TOPMOST;
+    if (strcmp(iconType, "warning") == 0) {
+      mbType |= MB_ICONWARNING;
+    } else if (strcmp(iconType, "error") == 0) {
+      mbType |= MB_ICONERROR;
+    } else {
+      mbType |= MB_ICONINFORMATION;
+    }
+    
+    // 显示消息框
+    MessageBoxA(NULL, message, title, mbType);
+    
+    // 注意：在XP系统上，MessageBox是模态的，无法实现超时自动关闭
+    // 用户需要手动点击确定按钮
+    printf("Note: On Windows XP, the notification requires user interaction to close\n");
+  } else {
+    // Windows 7/10/11实现 - 使用Shell_NotifyIcon
+    printf("Using modern Windows notification\n");
+    
+    // 注册窗口类
+    WNDCLASSA wc = {0};
+    wc.lpfnWndProc = DefWindowProc;
+    wc.hInstance = GetModuleHandle(NULL);
+    wc.lpszClassName = "NotifyWindowClass";
+    
+    if (RegisterClassA(&wc)) {
+      // 创建隐藏窗口
+      HWND hwnd = CreateWindowExA(0, "NotifyWindowClass", "NotifyWindow", 
+                                 0, 0, 0, 0, 0, NULL, NULL, 
+                                 GetModuleHandle(NULL), NULL);
+      
+      if (hwnd) {
+        // 初始化NOTIFYICONDATA结构
+        NOTIFYICONDATAA nid = {0};
+        nid.cbSize = sizeof(NOTIFYICONDATAA);
+        nid.hWnd = hwnd;
+        nid.uID = 1;
+        nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+        nid.uCallbackMessage = WM_USER + 1;
+        
+        // 设置图标
+        if (strcmp(iconType, "warning") == 0) {
+          nid.hIcon = LoadIcon(NULL, IDI_WARNING);
+        } else if (strcmp(iconType, "error") == 0) {
+          nid.hIcon = LoadIcon(NULL, IDI_ERROR);
+        } else {
+          nid.hIcon = LoadIcon(NULL, IDI_INFORMATION);
+        }
+        
+        // 设置提示文本
+        strncpy(nid.szTip, title, sizeof(nid.szTip) - 1);
+        nid.szTip[sizeof(nid.szTip) - 1] = '\0';
+        
+        // 添加通知图标
+        Shell_NotifyIconA(NIM_ADD, &nid);
+        
+        // 更新通知内容
+        nid.uFlags = NIF_INFO;
+        strncpy(nid.szInfoTitle, title, sizeof(nid.szInfoTitle) - 1);
+        nid.szInfoTitle[sizeof(nid.szInfoTitle) - 1] = '\0';
+        strncpy(nid.szInfo, message, sizeof(nid.szInfo) - 1);
+        nid.szInfo[sizeof(nid.szInfo) - 1] = '\0';
+        
+        // 设置信息标志
+        if (strcmp(iconType, "warning") == 0) {
+          nid.dwInfoFlags = NIIF_WARNING;
+        } else if (strcmp(iconType, "error") == 0) {
+          nid.dwInfoFlags = NIIF_ERROR;
+        } else {
+          nid.dwInfoFlags = NIIF_INFO;
+        }
+        
+        // 显示通知
+        Shell_NotifyIconA(NIM_MODIFY, &nid);
+        
+        // 等待指定时间
+        Sleep(timeout * 1000);
+        
+        // 删除通知图标
+        Shell_NotifyIconA(NIM_DELETE, &nid);
+        
+        // 销毁窗口
+        DestroyWindow(hwnd);
+      }
+      
+      // 注销窗口类
+      UnregisterClassA("NotifyWindowClass", GetModuleHandle(NULL));
+    } else {
+      // 如果无法注册窗口类，回退到MessageBox
+      printf("Falling back to MessageBox\n");
+      UINT mbType = MB_OK | MB_TOPMOST;
+      if (strcmp(iconType, "warning") == 0) {
+        mbType |= MB_ICONWARNING;
+      } else if (strcmp(iconType, "error") == 0) {
+        mbType |= MB_ICONERROR;
+      } else {
+        mbType |= MB_ICONINFORMATION;
+      }
+      MessageBoxA(NULL, message, title, mbType);
+    }
+  }
+  
+  printf("Notification displayed successfully\n");
 }
