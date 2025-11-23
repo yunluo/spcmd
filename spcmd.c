@@ -1405,7 +1405,7 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
         printf("  spcmd window --text=message [--title=title] [--width=width] [--height=height] [--fontsize=size] [--bgcolor=color] [--textcolor=color] [--bold] [--modal] [--nodrag]\n\n");
         printf("Parameter description:\n");
         printf("  --text=message     - Window display text (required)\n");
-        printf("  --title=title      - Window title, default is \"Custom Window\"\n");
+        printf("  --title=title      - Window title, default is \"系统提示\"\n");
         printf("  --width=width      - Window width in pixels, default is 600\n");
         printf("  --height=height    - Window height in pixels, default is 400\n");
         printf("  --fontsize=size    - Font size, default is 18\n");
@@ -1426,7 +1426,7 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
     
     // Parse parameters
     char* message = NULL;
-    char title[256] = "Custom Window";
+    char title[256] = "SYSTEM INFORMATION";
     int width = 600;
     int height = 400;
     int fontSize = 18;

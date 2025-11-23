@@ -56,6 +56,5 @@ if exist spcmd.exe (
     echo Warning: Executable file not found
 )
 
+copy spcmd.exe D:\VM\VM_PATH\ >nul 2>&1
 echo.
-echo Press any key to exit...
-pause >nul
