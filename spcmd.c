@@ -57,13 +57,8 @@ void cmd_service(int argc, char *argv[]);
 void cmd_task(int argc, char *argv[]);
 void cmd_restart(int argc, char *argv[]);
 void cmd_window(int argc, char *argv[]);
-
-
-
-void save_as_base64_data(const char *bitmap_data, DWORD data_size,
-                         const char *filename);
-int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename, 
-                          const char *format, int quality);
+void save_as_base64_data(const char *bitmap_data, DWORD data_size, const char *filename);
+int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename, const char *format, int quality);
 // 系统变量解析函数声明
 char *resolve_system_variables(const char *input);
 
@@ -81,6 +76,7 @@ typedef struct {
   BOOL noDrag;        // 是否禁止拖拽
   BOOL bold;          // 是否粗体
 } WindowParams;
+
 
 int main(int argc, char *argv[]) {
   // Set console code page for UTF-8 support
@@ -121,10 +117,8 @@ void show_help() {
   printf("  window                - Display custom window with advanced "
          "features\n");
   printf("  exec2                 - Execute application with working folder\n");
-  printf("  service               - Create system service\n");
   printf("  task                  - Create scheduled task\n");
   printf("  restart               - Restart specified process\n");
-  printf("  updater               - Check for updates and download new version\n");
   printf("\nType spcmd <command> --help for specific command help\n");
 }
 
@@ -158,8 +152,6 @@ void handle_command(int argc, char *argv[]) {
     cmd_window(argc, resolved_argv);
   } else if (strcmp(resolved_argv[1], "exec2") == 0) {
     cmd_exec2(argc, resolved_argv);
-  } else if (strcmp(resolved_argv[1], "service") == 0) {
-    cmd_service(argc, resolved_argv);
   } else if (strcmp(resolved_argv[1], "task") == 0) {
     cmd_task(argc, resolved_argv);
   } else if (strcmp(resolved_argv[1], "restart") == 0) {
@@ -817,20 +809,134 @@ void cmd_autorun(int argc, char *argv[]) {
   }
 }
 
-void cmd_service(int argc, char *argv[]) {
-  (void)argc; // 消除未使用参数警告
-  (void)argv; // 消除未使用参数警告
-  printf("创建系统服务...\n");
-  // TODO: 实现创建系统服务功能
-  printf("[未实现] 系统服务创建功能将在后续版本中实现\n");
-}
-
 void cmd_task(int argc, char *argv[]) {
-  (void)argc; // 消除未使用参数警告
-  (void)argv; // 消除未使用参数警告
-  printf("创建计划任务...\n");
-  // TODO: 实现创建计划任务功能
-  printf("[未实现] 计划任务创建功能将在后续版本中实现\n");
+  // Check if help is needed
+  if (argc > 2 &&
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
+    printf("Task command help:\n");
+    printf("  spcmd task --name=task_name --exec=program_path [--trigger=daily|weekly|monthly] [--starttime=HH:MM] [--startdate=YYYY-MM-DD]\n\n");
+    printf("Parameter description:\n");
+    printf("  --name=task_name      - Task name (required)\n");
+    printf("  --exec=program_path   - Program to execute (required)\n");
+    printf("  --trigger=schedule    - Trigger type: daily, weekly, monthly (default: daily)\n");
+    printf("  --starttime=HH:MM     - Start time in 24-hour format (default: 09:00)\n");
+    printf("  --startdate=YYYY-MM-DD - Start date (default: today) - Available on Windows Vista and later\n\n");
+    printf("Examples:\n");
+    printf("  spcmd task --name=\"Daily Backup\" --exec=\"C:\\Windows\\system32\\cmd.exe\" --trigger=daily\n");
+    printf("  spcmd task --name=\"Weekly Cleanup\" --exec=\"C:\\temp\\cleanup.bat\" --trigger=weekly --starttime=22:00\n");
+    printf("  spcmd task --name=\"Monthly Report\" --exec=\"C:\\reports\\generate.exe\" --trigger=monthly --starttime=08:00 --startdate=2025-12-01\n");
+    return;
+  }
+
+  // Parse parameters
+  char taskName[MAX_PATH] = {0};
+  char programPath[MAX_PATH] = {0};
+  char triggerType[20] = "daily";  // default trigger
+  char startTime[10] = "09:00";   // default start time
+  char startDate[15] = {0};        // default to today
+
+  BOOL hasName = FALSE;
+  BOOL hasExec = FALSE;
+
+  // Get current date as default start date
+  SYSTEMTIME st;
+  GetLocalTime(&st);
+  snprintf(startDate, sizeof(startDate), "%04d-%02d-%02d", st.wYear, st.wMonth, st.wDay);
+
+  for (int i = 2; i < argc; i++) {
+    if (strncmp(argv[i], "--name=", 7) == 0) {
+      strncpy(taskName, argv[i] + 7, MAX_PATH - 1);
+      taskName[MAX_PATH - 1] = '\0';
+      hasName = TRUE;
+    } else if (strncmp(argv[i], "--exec=", 7) == 0) {
+      strncpy(programPath, argv[i] + 7, MAX_PATH - 1);
+      programPath[MAX_PATH - 1] = '\0';
+      hasExec = TRUE;
+    } else if (strncmp(argv[i], "--trigger=", 10) == 0) {
+      strncpy(triggerType, argv[i] + 10, sizeof(triggerType) - 1);
+      triggerType[sizeof(triggerType) - 1] = '\0';
+    } else if (strncmp(argv[i], "--starttime=", 12) == 0) {
+      strncpy(startTime, argv[i] + 12, sizeof(startTime) - 1);
+      startTime[sizeof(startTime) - 1] = '\0';
+    } else if (strncmp(argv[i], "--startdate=", 12) == 0) {
+      strncpy(startDate, argv[i] + 12, sizeof(startDate) - 1);
+      startDate[sizeof(startDate) - 1] = '\0';
+    }
+  }
+
+  // Check required parameters
+  if (!hasName || !hasExec) {
+    printf("Error: Task name and program path must be specified\n");
+    printf("Use spcmd task --help for help\n");
+    return;
+  }
+
+  // Check if file exists
+  if (GetFileAttributesA(programPath) == INVALID_FILE_ATTRIBUTES) {
+    printf("Warning: Program file does not exist: %s\n", programPath);
+  }
+
+  printf("Creating scheduled task: %s\n", taskName);
+  printf("Program: %s\n", programPath);
+  printf("Trigger: %s\n", triggerType);
+  printf("Start time: %s\n", startTime);
+  printf("Start date: %s\n", startDate);
+
+  // 检查Windows版本以确定使用哪种方法
+  OSVERSIONINFO osvi;
+  ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
+  osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+  GetVersionEx(&osvi);
+  
+  BOOL isWindowsXP = (osvi.dwMajorVersion == 5 && osvi.dwMinorVersion == 1); // Windows XP是5.1版本
+  
+  char command[1024];
+  
+  if (isWindowsXP) {
+    // Windows XP兼容实现
+    printf("Using Windows XP compatible mode\n");
+    char scheduleType[20];
+    
+    // 确定调度类型
+    if (strcmp(triggerType, "weekly") == 0) {
+      strncpy(scheduleType, "WEEKLY", sizeof(scheduleType) - 1);
+    } else if (strcmp(triggerType, "monthly") == 0) {
+      strncpy(scheduleType, "MONTHLY", sizeof(scheduleType) - 1);
+    } else { // 默认每日任务
+      strncpy(scheduleType, "DAILY", sizeof(scheduleType) - 1);
+    }
+    scheduleType[sizeof(scheduleType) - 1] = '\0';
+    
+    // 构建schtasks命令 - XP兼容模式，不使用/sd参数
+    snprintf(command, sizeof(command), "schtasks /create /tn \"%s\" /tr \"%s\" /sc %s /st %s", taskName, programPath, scheduleType, startTime);
+  } else {
+    // 新版本Windows实现，支持更多参数
+    printf("Using modern Windows mode\n");
+    char scheduleType[20];
+    
+    // 确定调度类型
+    if (strcmp(triggerType, "weekly") == 0) {
+      strncpy(scheduleType, "WEEKLY", sizeof(scheduleType) - 1);
+    } else if (strcmp(triggerType, "monthly") == 0) {
+      strncpy(scheduleType, "MONTHLY", sizeof(scheduleType) - 1);
+    } else { // 默认每日任务
+      strncpy(scheduleType, "DAILY", sizeof(scheduleType) - 1);
+    }
+    scheduleType[sizeof(scheduleType) - 1] = '\0';
+    
+    // 构建schtasks命令 - 现代模式，包含开始日期
+    snprintf(command, sizeof(command), "schtasks /create /tn \"%s\" /tr \"%s\" /sc %s /st %s /sd %s", taskName, programPath, scheduleType, startTime, startDate);
+  }
+  
+  printf("Executing command: %s\n", command);
+  
+  // 执行命令
+  int result = system(command);
+  if (result == 0) {
+    printf("Task '%s' created successfully\n", taskName);
+  } else {
+    printf("Error: Failed to create task '%s'\n", taskName);
+  }
 }
 
 void cmd_restart(int argc, char *argv[]) {
