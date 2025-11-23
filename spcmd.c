@@ -1008,9 +1008,27 @@ void cmd_restart(int argc, char *argv[]) {
   PROCESS_INFORMATION pi = {0};
   si.cb = sizeof(si);
 
+  
+  // 如果没有指定工作目录，则使用进程所在目录作为工作目录
+  char* effectiveWorkDir = NULL;
+  char processDir[MAX_PATH] = {0};
+  
+  if (hasWorkDir) {
+    effectiveWorkDir = workingDir;
+  } else {
+    // 获取进程文件所在目录
+    strncpy(processDir, processPath, MAX_PATH - 1);
+    processDir[MAX_PATH - 1] = '\0';
+    char* lastSlash = strrchr(processDir, '\\');
+    if (lastSlash != NULL) {
+      *lastSlash = '\0';
+      effectiveWorkDir = processDir;
+    }
+  }
+  
   // Create the process
   if (CreateProcessA(NULL, processPath, NULL, NULL, FALSE, 0, NULL, 
-                     hasWorkDir ? workingDir : NULL, &si, &pi)) {
+                     effectiveWorkDir, &si, &pi)) {
     printf("Started process: %s (PID: %lu)\n", processPath, pi.dwProcessId);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
