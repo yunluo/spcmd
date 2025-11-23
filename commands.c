@@ -76,7 +76,7 @@ void cmd_shortcut(int argc, char* argv[]) {
     printf("Creating shortcut...\n");
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("Shortcut command help:\n");
         printf("  spcmd shortcut /target:path [/name:name] [/desc:description] [/icon:iconpath] [/workdir:dir]\n\n");
         printf("Parameter description:\n");
@@ -102,28 +102,28 @@ void cmd_shortcut(int argc, char* argv[]) {
     
     // Parse parameters
     for (int i = 2; i < argc; i++) {
-        if (strncmp(argv[i], "/target:", 8) == 0) {
-            strncpy(targetPath, argv[i] + 8, MAX_PATH - 1);
+        if (strncmp(argv[i], "--target:", 9) == 0) {
+            strncpy(targetPath, argv[i] + 9, MAX_PATH - 1);
             targetPath[MAX_PATH - 1] = '\0';
             hasTarget = TRUE;
-        } else if (strncmp(argv[i], "/name:", 6) == 0) {
-            strncpy(shortcutName, argv[i] + 6, MAX_PATH - 1);
+        } else if (strncmp(argv[i], "--name:", 7) == 0) {
+            strncpy(shortcutName, argv[i] + 7, MAX_PATH - 1);
             shortcutName[MAX_PATH - 1] = '\0';
-        } else if (strncmp(argv[i], "/desc:", 6) == 0) {
-            strncpy(description, argv[i] + 6, MAX_PATH - 1);
+        } else if (strncmp(argv[i], "--desc:", 7) == 0) {
+            strncpy(description, argv[i] + 7, MAX_PATH - 1);
             description[MAX_PATH - 1] = '\0';
-        } else if (strncmp(argv[i], "/icon:", 6) == 0) {
-            strncpy(iconPath, argv[i] + 6, MAX_PATH - 1);
+        } else if (strncmp(argv[i], "--icon:", 7) == 0) {
+            strncpy(iconPath, argv[i] + 7, MAX_PATH - 1);
             iconPath[MAX_PATH - 1] = '\0';
-        } else if (strncmp(argv[i], "/workdir:", 9) == 0) {
-            strncpy(workingDir, argv[i] + 9, MAX_PATH - 1);
+        } else if (strncmp(argv[i], "--workdir:", 10) == 0) {
+            strncpy(workingDir, argv[i] + 10, MAX_PATH - 1);
             workingDir[MAX_PATH - 1] = '\0';
         }
     }
     
     // Check required parameters
     if (!hasTarget) {
-        printf("Error: Target program path must be specified (/target:path)\n");
+        printf("Error: Target program path must be specified (--target=path)\n");
         printf("Use spcmd shortcut /help for help\n");
         return;
     }
@@ -233,7 +233,7 @@ void cmd_popup(int argc, char* argv[]) {
     printf("Displaying popup...\n");
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("Popup command help:\n");
         printf("  spcmd popup /text:message [/title:title] [/type:type] [/timeout:seconds]\n\n");
         printf("Parameter description:\n");
@@ -256,16 +256,16 @@ void cmd_popup(int argc, char* argv[]) {
     BOOL hasText = FALSE;
     
     for (int i = 2; i < argc; i++) {
-        if (strncmp(argv[i], "/text:", 6) == 0) {
-            strncpy(message, argv[i] + 6, MAX_PATH - 1);
+        if (strncmp(argv[i], "--text=", 7) == 0) {
+            strncpy(message, argv[i] + 7, MAX_PATH - 1);
             message[MAX_PATH - 1] = '\0';
             hasText = TRUE;
-        } else if (strncmp(argv[i], "/title:", 7) == 0) {
-            strncpy(title, argv[i] + 7, MAX_PATH - 1);
+        } else if (strncmp(argv[i], "--title=", 8) == 0) {
+            strncpy(title, argv[i] + 8, MAX_PATH - 1);
             title[MAX_PATH - 1] = '\0';
-        } else if (strncmp(argv[i], "/type:", 6) == 0) {
+        } else if (strncmp(argv[i], "--type=", 7) == 0) {
             char typeStr[MAX_PATH];
-            strncpy(typeStr, argv[i] + 6, MAX_PATH - 1);
+            strncpy(typeStr, argv[i] + 7, MAX_PATH - 1);
             typeStr[MAX_PATH - 1] = '\0';
             
             if (strcmp(typeStr, "warning") == 0) {
@@ -275,14 +275,14 @@ void cmd_popup(int argc, char* argv[]) {
             } else {
                 type = MB_OK | MB_ICONINFORMATION;
             }
-        } else if (strncmp(argv[i], "/timeout:", 9) == 0) {
-            timeout = atoi(argv[i] + 9);
+        } else if (strncmp(argv[i], "--timeout=", 10) == 0) {
+            timeout = atoi(argv[i] + 10);
         }
     }
     
     // Check required parameters
     if (!hasText) {
-        printf("Error: Popup text must be specified (/text:message)\n");
+        printf("Error: Popup text must be specified (--text=message)\n");
         printf("Use spcmd popup /help for help\n");
         return;
     }
@@ -318,7 +318,7 @@ void cmd_task(int argc, char* argv[]) {
 
 void cmd_restart(int argc, char* argv[]) {
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("Restart command help:\n");
         printf("  spcmd restart /path:process_path\n\n");
         printf("Parameter description:\n");
@@ -334,8 +334,8 @@ void cmd_restart(int argc, char* argv[]) {
     BOOL hasPath = FALSE;
     
     for (int i = 2; i < argc; i++) {
-        if (strncmp(argv[i], "/path:", 6) == 0) {
-            strncpy(processPath, argv[i] + 6, MAX_PATH - 1);
+        if (strncmp(argv[i], "--path=", 7) == 0) {
+            strncpy(processPath, argv[i] + 7, MAX_PATH - 1);
             processPath[MAX_PATH - 1] = '\0';
             hasPath = TRUE;
         }
@@ -343,7 +343,7 @@ void cmd_restart(int argc, char* argv[]) {
     
     // Check required parameters
     if (!hasPath) {
-        printf("Error: Process path must be specified (/path:process_path)\n");
+        printf("Error: Process path must be specified (--path=process_path)\n");
         printf("Use spcmd restart /help for help\n");
         return;
     }
@@ -438,7 +438,7 @@ void cmd_exec2(int argc, char* argv[]) {
     // that specifies the default working folder for the application that you run.
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("exec2 command help:\n");
         printf("  spcmd exec2 [show/hide/min/max] [working folder] [application + command-line]\n\n");
         printf("Parameter description:\n");
@@ -508,7 +508,7 @@ void cmd_infobox(int argc, char* argv[]) {
     // Displays a simple message box on the screen.
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("infobox command help:\n");
         printf("  spcmd infobox [message text] [title]\n\n");
         printf("Parameter description:\n");
@@ -536,7 +536,7 @@ void cmd_infoboxtop(int argc, char* argv[]) {
     // Similar to infobox, but displays the message-box as top-most window.
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("infoboxtop command help:\n");
         printf("  spcmd infoboxtop [message text] [title]\n\n");
         printf("Parameter description:\n");
@@ -570,7 +570,7 @@ void cmd_qbox(int argc, char* argv[]) {
     // Displays a question dialog-box on the screen. If the user answers "Yes", run a program
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("qbox command help:\n");
         printf("  spcmd qbox [message text] [title] [program to run]\n\n");
         printf("Parameter description:\n");
@@ -619,7 +619,7 @@ void cmd_qboxtop(int argc, char* argv[]) {
     // Similar to qbox, but displays the message-box as top-most window.
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("qboxtop command help:\n");
         printf("  spcmd qboxtop [message text] [title] [program to run]\n\n");
         printf("Parameter description:\n");

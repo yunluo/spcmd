@@ -1,6 +1,9 @@
 #ifndef SPCMD_H
 #define SPCMD_H
 
+// 包含XP兼容性定义
+#include "xp_compat.h"
+
 #include <windows.h>
 #include <stdbool.h>
 
@@ -25,6 +28,7 @@ typedef struct {
     COLORREF textColor; // 添加文字颜色
     BOOL modal; // 是否为模态弹窗
     BOOL noDrag; // 是否禁止拖拽
+    BOOL bold; // 是否粗体
 } WindowParams;
 
 // 函数声明

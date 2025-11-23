@@ -46,6 +46,7 @@ typedef struct {
     COLORREF textColor; // 添加文字颜色
     BOOL modal; // 是否为模态弹窗
     BOOL noDrag; // 是否禁止拖拽
+    BOOL bold; // 是否粗体
 } WindowParams;
 
 // 函数声明
@@ -101,14 +102,14 @@ void show_help() {
     printf("  restart               - Restart specified process\n");
     printf("\nExamples:\n");
     printf("  spcmd screenshot\n");
-    printf("  spcmd shortcut /target:C:\\Windows\\notepad.exe\n");
+    printf("  spcmd shortcut --target=C:\\Windows\\notepad.exe\n");
     printf("  spcmd infobox \"This is a message box!\" \"Message\"\n");
     printf("  spcmd infoboxtop \"This is a top-most message box!\" \"Top-Most Message\"\n");
     printf("  spcmd qbox \"Do you want to run calc?\" \"Question\" \"calc.exe\"\n");
-    printf("  spcmd window /text:\"Hello World\" /title:\"Custom Window\"\n");
+    printf("  spcmd window --text=\"Hello World\" --title=\"Custom Window\"\n");
     printf("  spcmd exec2 show \"f:\\winnt\\system32\" \"f:\\winnt\\system32\\calc.exe\"\n");
-    printf("  spcmd exec2 hide c:\\temp \"c:\\temp\\wul.exe\" /savelangfile\n");
-    printf("\nType spcmd <command> /help for specific command help\n");
+    printf("  spcmd exec2 hide c:\\temp \"c:\\temp\\wul.exe\"\n");
+    printf("\nType spcmd <command> --help for specific command help\n");
 }
 
 void handle_command(int argc, char* argv[]) {
@@ -148,23 +149,23 @@ void cmd_screenshot(int argc, char* argv[]) {
     printf("Executing screenshot function...\n");
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("Screenshot command help:\n");
-        printf("  spcmd screenshot [/save:path] [/fullscreen] [/active] [/format:png|bmp] [/base64:file] [/quality:value]\n\n");
+        printf("  spcmd screenshot [--save=path] [--fullscreen] [--active] [--format=png|bmp] [--base64=file] [--quality=value]\n\n");
         printf("Parameter description:\n");
-        printf("  /save:path       - Save screenshot to specified path, default to current directory\n");
-        printf("  /fullscreen      - Capture full screen (default)\n");
-        printf("  /active          - Capture active window\n");
-        printf("  /format:png|bmp  - Save format, default is bmp\n");
-        printf("  /base64:file     - Save as Base64 encoded data to specified file\n");
-        printf("  /quality:value   - Image quality for PNG (1-100), default is 100\n\n");
+        printf("  --save=path       - Save screenshot to specified path, default to current directory\n");
+        printf("  --fullscreen      - Capture full screen (default)\n");
+        printf("  --active          - Capture active window\n");
+        printf("  --format=png|bmp  - Save format, default is bmp\n");
+        printf("  --base64=file     - Save as Base64 encoded data to specified file\n");
+        printf("  --quality=value   - Image quality for PNG (1-100), default is 100\n\n");
         printf("Examples:\n");
         printf("  spcmd screenshot\n");
-        printf("  spcmd screenshot /save:C:\\screenshots\\screen.png\n");
-        printf("  spcmd screenshot /active\n");
-        printf("  spcmd screenshot /format:png\n");
-        printf("  spcmd screenshot /base64:screenshot.b64\n");
-        printf("  spcmd screenshot /format:png /quality:80\n");
+        printf("  spcmd screenshot --save=C:\\screenshots\\screen.png\n");
+        printf("  spcmd screenshot --active\n");
+        printf("  spcmd screenshot --format=png\n");
+        printf("  spcmd screenshot --base64=screenshot.b64\n");
+        printf("  spcmd screenshot --format=png --quality=80\n");
         return;
     }
     
@@ -241,17 +242,17 @@ void cmd_screenshot(int argc, char* argv[]) {
     int quality = 100; // default quality
     
     for (int i = 2; i < argc; i++) {
-        if (strncmp(argv[i], "/save:", 6) == 0) {
+        if (strncmp(argv[i], "--save=", 7) == 0) {
             strncpy(filename, argv[i] + 6, MAX_PATH - 1);
             filename[MAX_PATH - 1] = '\0';
-        } else if (strncmp(argv[i], "/format:", 8) == 0) {
+        } else if (strncmp(argv[i], "--format=", 9) == 0) {
             strncpy(format, argv[i] + 8, sizeof(format) - 1);
             format[sizeof(format) - 1] = '\0';
-        } else if (strncmp(argv[i], "/base64:", 8) == 0) {
+        } else if (strncmp(argv[i], "--base64=", 9) == 0) {
             strncpy(base64_filename, argv[i] + 8, MAX_PATH - 1);
             base64_filename[MAX_PATH - 1] = '\0';
             save_as_base64 = TRUE;
-        } else if (strncmp(argv[i], "/quality:", 9) == 0) {
+        } else if (strncmp(argv[i], "--quality=", 10) == 0) {
             quality = atoi(argv[i] + 9);
             // Ensure quality is between 1 and 100
             if (quality < 1) quality = 1;
@@ -356,18 +357,18 @@ void cmd_shortcut(int argc, char* argv[]) {
     printf("Creating shortcut...\n");
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("Shortcut command help:\n");
-        printf("  spcmd shortcut /target:path [/name:name] [/desc:description] [/icon:iconpath] [/workdir:dir]\n\n");
+        printf("  spcmd shortcut --target=path [--name=name] [--desc=description] [--icon=iconpath] [--workdir=dir]\n\n");
         printf("Parameter description:\n");
-        printf("  /target:path       - Target program path (required)\n");
-        printf("  /name:name         - Shortcut name, default is program name\n");
-        printf("  /desc:description  - Shortcut description\n");
-        printf("  /icon:iconpath     - Icon path\n");
-        printf("  /workdir:dir       - Working directory\n\n");
+        printf("  --target=path       - Target program path (required)\n");
+        printf("  --name=name         - Shortcut name, default is program name\n");
+        printf("  --desc=description  - Shortcut description\n");
+        printf("  --icon=iconpath     - Icon path\n");
+        printf("  --workdir=dir       - Working directory\n\n");
         printf("Examples:\n");
-        printf("  spcmd shortcut /target:C:\\Windows\\notepad.exe\n");
-        printf("  spcmd shortcut /target:C:\\Windows\\notepad.exe /name:Notepad /desc:Open Notepad program\n");
+        printf("  spcmd shortcut --target=C:\\Windows\\notepad.exe\n");
+        printf("  spcmd shortcut --target=C:\\Windows\\notepad.exe --name=Notepad --desc=Open Notepad program\n");
         return;
     }
     
@@ -382,20 +383,20 @@ void cmd_shortcut(int argc, char* argv[]) {
     
     // Parse parameters
     for (int i = 2; i < argc; i++) {
-        if (strncmp(argv[i], "/target:", 8) == 0) {
+        if (strncmp(argv[i], "--target=", 9) == 0) {
             strncpy(targetPath, argv[i] + 8, MAX_PATH - 1);
             targetPath[MAX_PATH - 1] = '\0';
             hasTarget = TRUE;
-        } else if (strncmp(argv[i], "/name:", 6) == 0) {
+        } else if (strncmp(argv[i], "--name=", 7) == 0) {
             strncpy(shortcutName, argv[i] + 6, MAX_PATH - 1);
             shortcutName[MAX_PATH - 1] = '\0';
-        } else if (strncmp(argv[i], "/desc:", 6) == 0) {
+        } else if (strncmp(argv[i], "--desc=", 7) == 0) {
             strncpy(description, argv[i] + 6, MAX_PATH - 1);
             description[MAX_PATH - 1] = '\0';
-        } else if (strncmp(argv[i], "/icon:", 6) == 0) {
+        } else if (strncmp(argv[i], "--icon=", 7) == 0) {
             strncpy(iconPath, argv[i] + 6, MAX_PATH - 1);
             iconPath[MAX_PATH - 1] = '\0';
-        } else if (strncmp(argv[i], "/workdir:", 9) == 0) {
+        } else if (strncmp(argv[i], "--workdir=", 10) == 0) {
             strncpy(workingDir, argv[i] + 9, MAX_PATH - 1);
             workingDir[MAX_PATH - 1] = '\0';
         }
@@ -403,7 +404,7 @@ void cmd_shortcut(int argc, char* argv[]) {
     
     // Check required parameters
     if (!hasTarget) {
-        printf("Error: Target program path must be specified (/target:path)\n");
+        printf("Error: Target program path must be specified (--target=path)\n");
         printf("Use spcmd shortcut /help for help\n");
         return;
     }
@@ -513,17 +514,17 @@ void cmd_popup(int argc, char* argv[]) {
     printf("Displaying popup...\n");
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("Popup command help:\n");
-        printf("  spcmd popup /text:message [/title:title] [/type:type] [/timeout:seconds]\n\n");
+        printf("  spcmd popup --text=message [--title=title] [--type=type] [--timeout=seconds]\n\n");
         printf("Parameter description:\n");
-        printf("  /text:message     - Popup display text (required)\n");
-        printf("  /title:title      - Popup title, default is \"Information\"\n");
-        printf("  /type:type        - Popup type: info(information), warning, error\n");
-        printf("  /timeout:seconds  - Auto-close time (seconds), 0 means no auto-close\n\n");
+        printf("  --text=message     - Popup display text (required)\n");
+        printf("  --title=title      - Popup title, default is \"Information\"\n");
+        printf("  --type=type        - Popup type: info(information), warning, error\n");
+        printf("  --timeout=seconds  - Auto-close time (seconds), 0 means no auto-close\n\n");
         printf("Examples:\n");
-        printf("  spcmd popup /text:\"Hello World\"\n");
-        printf("  spcmd popup /text:\"Operation completed\" /title:\"Prompt\" /type:info\n");
+        printf("  spcmd popup --text=\"Hello World\"\n");
+        printf("  spcmd popup --text=\"Operation completed\" --title=\"Prompt\" --type=info\n");
         return;
     }
     
@@ -536,14 +537,14 @@ void cmd_popup(int argc, char* argv[]) {
     BOOL hasText = FALSE;
     
     for (int i = 2; i < argc; i++) {
-        if (strncmp(argv[i], "/text:", 6) == 0) {
+        if (strncmp(argv[i], "--text=", 7) == 0) {
             strncpy(message, argv[i] + 6, MAX_PATH - 1);
             message[MAX_PATH - 1] = '\0';
             hasText = TRUE;
-        } else if (strncmp(argv[i], "/title:", 7) == 0) {
+        } else if (strncmp(argv[i], "--title=", 8) == 0) {
             strncpy(title, argv[i] + 7, MAX_PATH - 1);
             title[MAX_PATH - 1] = '\0';
-        } else if (strncmp(argv[i], "/type:", 6) == 0) {
+        } else if (strncmp(argv[i], "--type=", 7) == 0) {
             char typeStr[MAX_PATH];
             strncpy(typeStr, argv[i] + 6, MAX_PATH - 1);
             typeStr[MAX_PATH - 1] = '\0';
@@ -555,14 +556,14 @@ void cmd_popup(int argc, char* argv[]) {
             } else {
                 type = MB_OK | MB_ICONINFORMATION;
             }
-        } else if (strncmp(argv[i], "/timeout:", 9) == 0) {
+        } else if (strncmp(argv[i], "--timeout=", 10) == 0) {
             timeout = atoi(argv[i] + 9);
         }
     }
     
     // Check required parameters
     if (!hasText) {
-        printf("Error: Popup text must be specified (/text:message)\n");
+        printf("Error: Popup text must be specified (--text=message)\n");
         printf("Use spcmd popup /help for help\n");
         return;
     }
@@ -598,14 +599,14 @@ void cmd_task(int argc, char* argv[]) {
 
 void cmd_restart(int argc, char* argv[]) {
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("Restart command help:\n");
-        printf("  spcmd restart /path:process_path\n\n");
+        printf("  spcmd restart --path=process_path\n\n");
         printf("Parameter description:\n");
-        printf("  /path:process_path  - Path to the process executable to restart (required)\n\n");
+        printf("  --path=process_path  - Path to the process executable to restart (required)\n\n");
         printf("Examples:\n");
-        printf("  spcmd restart /path:\"C:\\Windows\\notepad.exe\"\n");
-        printf("  spcmd restart /path:\"C:\\Program Files\\MyApp\\myapp.exe\"\n");
+        printf("  spcmd restart --path=\"C:\\Windows\\notepad.exe\"\n");
+        printf("  spcmd restart --path=\"C:\\Program Files\\MyApp\\myapp.exe\"\n");
         return;
     }
     
@@ -614,7 +615,7 @@ void cmd_restart(int argc, char* argv[]) {
     BOOL hasPath = FALSE;
     
     for (int i = 2; i < argc; i++) {
-        if (strncmp(argv[i], "/path:", 6) == 0) {
+        if (strncmp(argv[i], "--path=", 7) == 0) {
             strncpy(processPath, argv[i] + 6, MAX_PATH - 1);
             processPath[MAX_PATH - 1] = '\0';
             hasPath = TRUE;
@@ -623,7 +624,7 @@ void cmd_restart(int argc, char* argv[]) {
     
     // Check required parameters
     if (!hasPath) {
-        printf("Error: Process path must be specified (/path:process_path)\n");
+        printf("Error: Process path must be specified (--path=process_path)\n");
         printf("Use spcmd restart /help for help\n");
         return;
     }
@@ -718,7 +719,7 @@ void cmd_exec2(int argc, char* argv[]) {
     // that specifies the default working folder for the application that you run.
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("exec2 command help:\n");
         printf("  spcmd exec2 [show/hide/min/max] [working folder] [application + command-line]\n\n");
         printf("Parameter description:\n");
@@ -788,7 +789,7 @@ void cmd_infobox(int argc, char* argv[]) {
     // Displays a simple message box on the screen.
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("infobox command help:\n");
         printf("  spcmd infobox [message text] [title]\n\n");
         printf("Parameter description:\n");
@@ -816,7 +817,7 @@ void cmd_infoboxtop(int argc, char* argv[]) {
     // Similar to infobox, but displays the message-box as top-most window.
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("infoboxtop command help:\n");
         printf("  spcmd infoboxtop [message text] [title]\n\n");
         printf("Parameter description:\n");
@@ -834,14 +835,16 @@ void cmd_infoboxtop(int argc, char* argv[]) {
         return;
     }
     
-    // Make the message box top-most
-    HWND hwnd = GetForegroundWindow();
-    if (hwnd != NULL) {
-        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+    // Display top-most message box
+    // 获取当前活跃窗口句柄，然后在该窗口上显示置顶消息框
+    HWND hActiveWnd = GetForegroundWindow();
+    if (hActiveWnd == NULL) {
+        // 如果无法获取活跃窗口句柄，则在桌面上显示
+        hActiveWnd = GetDesktopWindow();
     }
     
-    // Display top-most message box
-    MessageBoxA(NULL, argv[2], argv[3], MB_OK | MB_ICONINFORMATION);
+    // 显示置顶消息框
+    MessageBoxA(hActiveWnd, argv[2], argv[3], MB_OK | MB_ICONINFORMATION | MB_SYSTEMMODAL);
     printf("Top-most message box displayed\n");
 }
 
@@ -850,7 +853,7 @@ void cmd_qbox(int argc, char* argv[]) {
     // Displays a question dialog-box on the screen. If the user answers "Yes", run a program
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("qbox command help:\n");
         printf("  spcmd qbox [message text] [title] [program to run]\n\n");
         printf("Parameter description:\n");
@@ -899,7 +902,7 @@ void cmd_qboxtop(int argc, char* argv[]) {
     // Similar to qbox, but displays the message-box as top-most window.
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("qboxtop command help:\n");
         printf("  spcmd qboxtop [message text] [title] [program to run]\n\n");
         printf("Parameter description:\n");
@@ -919,12 +922,15 @@ void cmd_qboxtop(int argc, char* argv[]) {
     }
     
     // Display top-most question box
-    HWND hwnd = GetForegroundWindow();
-    if (hwnd != NULL) {
-        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+    // 获取当前活跃窗口句柄，然后在该窗口上显示置顶消息框
+    HWND hActiveWnd = GetForegroundWindow();
+    if (hActiveWnd == NULL) {
+        // 如果无法获取活跃窗口句柄，则在桌面上显示
+        hActiveWnd = GetDesktopWindow();
     }
     
-    int result = MessageBoxA(NULL, argv[2], argv[3], MB_YESNO | MB_ICONQUESTION);
+    // 显示置顶消息框
+    int result = MessageBoxA(hActiveWnd, argv[2], argv[3], MB_YESNO | MB_ICONQUESTION | MB_SYSTEMMODAL);
     
     if (result == IDYES) {
         // Run the specified program
@@ -1181,6 +1187,8 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
     static WindowParams* params = NULL;
     static HFONT hFont = NULL;
     static HWND hButton = NULL;
+    static BOOL flashTimerActive = FALSE; // 闪亮定时器状态
+    static UINT_PTR flashTimerId = 0;     // 闪亮定时器ID
     
     switch (msg) {
         case WM_CREATE: {
@@ -1198,13 +1206,22 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             
             // 创建字体，使用系统默认字体以确保中文支持
             hFont = CreateFontA(
-                params ? params->fontSize : 18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                params ? params->fontSize : 18, 0, 0, 0, params && params->bold ? FW_BOLD : FW_NORMAL, FALSE, FALSE, FALSE,
                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                 DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Microsoft Sans Serif");
             
             // 如果上面的字体不可用，使用系统默认GUI字体
             if (!hFont) {
                 hFont = GetStockObject(DEFAULT_GUI_FONT);
+            }
+            
+            // 加载系统信息图标
+            HICON hIcon = LoadIcon(NULL, IDI_INFORMATION);
+            if (hIcon) {
+                // 设置大图标
+                SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+                // 设置小图标
+                SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
             }
             
             // 创建确认按钮，使用宽字符确保中文支持
@@ -1218,6 +1235,21 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             // 设置按钮字体
             if (hFont) {
                 SendMessage(hButton, WM_SETFONT, (WPARAM)hFont, TRUE);
+            }
+            
+            // 如果是模态窗口，启动闪亮定时器（每2秒闪亮一次）
+            if (params && params->modal) {
+                flashTimerId = SetTimer(hwnd, 1, 2000, NULL);
+                flashTimerActive = TRUE;
+                
+                // 立即闪亮一次以吸引用户注意
+                FLASHWINFO fwi;
+                fwi.cbSize = sizeof(FLASHWINFO);
+                fwi.hwnd = hwnd;
+                fwi.dwFlags = FLASHW_ALL | FLASHW_TIMERNOFG; // 闪亮整个窗口，不抢占焦点
+                fwi.uCount = 2;  // 闪亮2次
+                fwi.dwTimeout = 0; // 使用默认时间间隔
+                FlashWindowEx(&fwi);
             }
             
             break;
@@ -1312,6 +1344,20 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             break;
         }
         
+        case WM_TIMER: {
+            if (wParam == 1) { // 闪亮定时器
+                // 使窗口闪亮以提醒用户注意
+                FLASHWINFO fwi;
+                fwi.cbSize = sizeof(FLASHWINFO);
+                fwi.hwnd = hwnd;
+                fwi.dwFlags = FLASHW_ALL | FLASHW_TIMERNOFG; // 闪亮整个窗口，不抢占焦点
+                fwi.uCount = 3;  // 闪亮3次
+                fwi.dwTimeout = 0; // 使用默认时间间隔
+                FlashWindowEx(&fwi);
+            }
+            break;
+        }
+        
         case WM_NCHITTEST: {
             // 如果禁止拖拽，阻止窗口移动
             if (params && params->noDrag) {
@@ -1324,11 +1370,24 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         }
         
         case WM_DESTROY: {
+            // 销毁按钮窗口
+            if (hButton) {
+                DestroyWindow(hButton);
+                hButton = NULL;
+            }
+            
             // 清理字体资源
             if (hFont) {
                 DeleteObject(hFont);
                 hFont = NULL;
             }
+            
+            // 清理定时器
+            if (flashTimerActive) {
+                KillTimer(hwnd, flashTimerId);
+                flashTimerActive = FALSE;
+            }
+            
             PostQuitMessage(0);
             break;
         }
@@ -1341,25 +1400,27 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
 void cmd_window(int argc, char* argv[]) { // 改为window命令
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("Window command help:\n");
-        printf("  spcmd window /text:message [/title:title] [/width:width] [/height:height] [/fontsize:size] [/bgcolor:color] [/textcolor:color] [/modal] [/nodrag]\n\n");
+        printf("  spcmd window --text=message [--title=title] [--width=width] [--height=height] [--fontsize=size] [--bgcolor=color] [--textcolor=color] [--bold] [--modal] [--nodrag]\n\n");
         printf("Parameter description:\n");
-        printf("  /text:message     - Window display text (required)\n");
-        printf("  /title:title      - Window title, default is \"Custom Window\"\n");
-        printf("  /width:width      - Window width in pixels, default is 600\n");
-        printf("  /height:height    - Window height in pixels, default is 400\n");
-        printf("  /fontsize:size    - Font size, default is 18\n");
-        printf("  /bgcolor:color    - Background color as name (white,black,red,green,blue,yellow,cyan,magenta,gray,orange,purple,pink,lightblue,lightgreen,lightgray) or RGB values (r,g,b), default is white\n");
-        printf("  /textcolor:color  - Text color as name or RGB values, default is black\n");
-        printf("  /modal            - Make window modal (blocks other windows until closed)\n");
-        printf("  /nodrag           - Disable window dragging\n\n");
+        printf("  --text=message     - Window display text (required)\n");
+        printf("  --title=title      - Window title, default is \"Custom Window\"\n");
+        printf("  --width=width      - Window width in pixels, default is 600\n");
+        printf("  --height=height    - Window height in pixels, default is 400\n");
+        printf("  --fontsize=size    - Font size, default is 18\n");
+        printf("  --bgcolor=color    - Background color as name (white,black,red,green,blue,yellow,cyan,magenta,gray,orange,purple,pink,lightblue,lightgreen,lightgray) or RGB values (r,g,b), default is white\n");
+        printf("  --textcolor=color  - Text color as name or RGB values, default is black\n");
+        printf("  --bold             - Set text to bold\n");
+        printf("  --modal            - Make window modal (blocks other windows until closed and enables forced interaction)\n");
+        printf("  --nodrag           - Disable window dragging\n\n");
         printf("Examples:\n");
-        printf("  spcmd window /text:\"Hello World\"\n");
-        printf("  spcmd window /text:\"Line 1\\nLine 2\\nLine 3\" /title:\"Multi-line Text\" /width:500 /height:300\n");
-        printf("  spcmd window /text:\"Red background window\" /bgcolor:red /fontsize:20\n");
-        printf("  spcmd window /text:\"Blue text on yellow background\" /bgcolor:yellow /textcolor:blue\n");
-        printf("  spcmd window /text:\"Modal window\" /modal\n");
+        printf("  spcmd window --text=\"Hello World\"\n");
+        printf("  spcmd window --text=\"Line 1\\nLine 2\\nLine 3\" --title=\"Multi-line Text\" --width=500 --height=300\n");
+        printf("  spcmd window --text=\"Red background window\" --bgcolor=red --fontsize=20\n");
+        printf("  spcmd window --text=\"Blue text on yellow background\" --bgcolor=yellow --textcolor=blue\n");
+        printf("  spcmd window --text=\"Bold text example\" --bold\n");
+        printf("  spcmd window --text=\"Modal window with forced interaction\" --modal\n");
         return;
     }
     
@@ -1373,24 +1434,25 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
     COLORREF textColor = RGB(0, 0, 0); // 默认黑色文字
     BOOL modal = FALSE;
     BOOL noDrag = FALSE;
+    BOOL bold = FALSE;
     BOOL hasText = FALSE;
     
     for (int i = 2; i < argc; i++) {
-        if (strncmp(argv[i], "/text:", 6) == 0) {
-            message = argv[i] + 6;
+        if (strncmp(argv[i], "--text=", 7) == 0) {
+            message = argv[i] + 7;  // 跳过 "--text=" 前缀
             hasText = TRUE;
-        } else if (strncmp(argv[i], "/title:", 7) == 0) {
-            strncpy(title, argv[i] + 7, sizeof(title) - 1);
+        } else if (strncmp(argv[i], "--title=", 8) == 0) {
+            strncpy(title, argv[i] + 8, sizeof(title) - 1);  // 跳过 "--title=" 前缀
             title[sizeof(title) - 1] = '\0';
-        } else if (strncmp(argv[i], "/width:", 7) == 0) {
-            width = atoi(argv[i] + 7);
-        } else if (strncmp(argv[i], "/height:", 8) == 0) {
-            height = atoi(argv[i] + 8);
-        } else if (strncmp(argv[i], "/fontsize:", 10) == 0) {
-            fontSize = atoi(argv[i] + 10);
-        } else if (strncmp(argv[i], "/bgcolor:", 9) == 0) {
+        } else if (strncmp(argv[i], "--width=", 8) == 0) {
+            width = atoi(argv[i] + 8);  // 跳过 "--width=" 前缀
+        } else if (strncmp(argv[i], "--height=", 9) == 0) {
+            height = atoi(argv[i] + 9);  // 跳过 "--height=" 前缀
+        } else if (strncmp(argv[i], "--fontsize=", 11) == 0) {
+            fontSize = atoi(argv[i] + 11);  // 跳过 "--fontsize=" 前缀
+        } else if (strncmp(argv[i], "--bgcolor=", 10) == 0) {
             char colorStr[256];
-            strncpy(colorStr, argv[i] + 9, sizeof(colorStr) - 1);
+            strncpy(colorStr, argv[i] + 10, sizeof(colorStr) - 1);  // 跳过 "--bgcolor=" 前缀
             colorStr[sizeof(colorStr) - 1] = '\0';
             
             // 检查是否为RGB格式 (r,g,b)
@@ -1403,9 +1465,9 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
                 // 使用颜色名称
                 bgColor = GetColorByName(colorStr);
             }
-        } else if (strncmp(argv[i], "/textcolor:", 11) == 0) {
+        } else if (strncmp(argv[i], "--textcolor=", 12) == 0) {
             char colorStr[256];
-            strncpy(colorStr, argv[i] + 11, sizeof(colorStr) - 1);
+            strncpy(colorStr, argv[i] + 12, sizeof(colorStr) - 1);  // 跳过 "--textcolor=" 前缀
             colorStr[sizeof(colorStr) - 1] = '\0';
             
             // 检查是否为RGB格式 (r,g,b)
@@ -1418,10 +1480,12 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
                 // 使用颜色名称
                 textColor = GetColorByName(colorStr);
             }
-        } else if (strcmp(argv[i], "/modal") == 0) {
+        } else if (strcmp(argv[i], "--modal") == 0) {
             modal = TRUE;
-        } else if (strcmp(argv[i], "/nodrag") == 0) {
+        } else if (strcmp(argv[i], "--nodrag") == 0) {
             noDrag = TRUE;
+        } else if (strcmp(argv[i], "--bold") == 0) {
+            bold = TRUE;
         }
     }
     
@@ -1468,6 +1532,7 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
     params->textColor = textColor;
     params->modal = modal;
     params->noDrag = noDrag;
+    params->bold = bold;
     
     // 注册窗口类
     WNDCLASSA wc = {0};
@@ -1500,6 +1565,9 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
     // 消息循环
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0)) {
+        if (msg.message == WM_QUIT) {
+            break;
+        }
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }

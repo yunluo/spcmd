@@ -49,6 +49,9 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
     static WindowParams* params = NULL;
     static HFONT hFont = NULL;
     static HWND hButton = NULL;
+    // 添加静态画笔和画刷以避免重复创建
+    static HBRUSH hBrush = NULL;
+    static HPEN hPen = NULL;
     
     switch (msg) {
         case WM_CREATE: {
@@ -63,7 +66,7 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             
             // 创建字体，使用系统默认字体以确保中文支持
             hFont = CreateFontA(
-                params->fontSize, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                params->fontSize, 0, 0, 0, params->bold ? FW_BOLD : FW_NORMAL, FALSE, FALSE, FALSE,
                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                 DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Microsoft Sans Serif");
             
@@ -71,6 +74,10 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             if (!hFont) {
                 hFont = GetStockObject(DEFAULT_GUI_FONT);
             }
+            
+            // 创建画笔和画刷（只创建一次）
+            hBrush = CreateSolidBrush(params->bgColor);
+            hPen = CreatePen(PS_SOLID, 1, params->bgColor);
             
             // 创建确认按钮，使用宽字符确保中文支持
             wchar_t buttonText[] = L"确定";
@@ -96,11 +103,7 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             RECT rect;
             GetClientRect(hwnd, &rect);
             
-            // 创建画笔和画刷
-            HBRUSH hBrush = CreateSolidBrush(params->bgColor);
-            HPEN hPen = CreatePen(PS_SOLID, 1, params->bgColor);
-            
-            // 选择画笔和画刷到设备上下文
+            // 选择画笔和画刷到设备上下文（使用预先创建的）
             HGDIOBJ oldBrush = SelectObject(hdc, hBrush);
             HGDIOBJ oldPen = SelectObject(hdc, hPen);
             
@@ -110,10 +113,6 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             // 恢复旧的画笔和画刷
             SelectObject(hdc, oldBrush);
             SelectObject(hdc, oldPen);
-            
-            // 删除画笔和画刷
-            DeleteObject(hBrush);
-            DeleteObject(hPen);
             
             // 设置文本颜色和背景模式
             SetTextColor(hdc, params->textColor);
@@ -192,6 +191,15 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 DeleteObject(hFont);
                 hFont = NULL;
             }
+            // 清理画笔和画刷资源
+            if (hBrush) {
+                DeleteObject(hBrush);
+                hBrush = NULL;
+            }
+            if (hPen) {
+                DeleteObject(hPen);
+                hPen = NULL;
+            }
             PostQuitMessage(0);
             break;
         }
@@ -204,7 +212,7 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
 void cmd_window(int argc, char* argv[]) { // 改为window命令
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("Window command help:\n");
         printf("  spcmd window /text:message [/title:title] [/width:width] [/height:height] [/fontsize:size] [/bgcolor:color] [/textcolor:color] [/modal] [/nodrag]\n\n");
         printf("Parameter description:\n");
@@ -215,6 +223,7 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
         printf("  /fontsize:size    - Font size, default is 18\n");
         printf("  /bgcolor:color    - Background color as name (white,black,red,green,blue,yellow,cyan,magenta,gray,orange,purple,pink,lightblue,lightgreen,lightgray) or RGB values (r,g,b), default is white\n");
         printf("  /textcolor:color  - Text color as name or RGB values, default is black\n");
+        printf("  /bold             - Set text to bold\n");
         printf("  /modal            - Make window modal (blocks other windows until closed)\n");
         printf("  /nodrag           - Disable window dragging\n\n");
         printf("Examples:\n");
@@ -222,6 +231,7 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
         printf("  spcmd window /text:\"Line 1\\nLine 2\\nLine 3\" /title:\"Multi-line Text\" /width:500 /height:300\n");
         printf("  spcmd window /text:\"Red background window\" /bgcolor:red /fontsize:20\n");
         printf("  spcmd window /text:\"Blue text on yellow background\" /bgcolor:yellow /textcolor:blue\n");
+        printf("  spcmd window /text:\"Bold text example\" /bold\n");
         printf("  spcmd window /text:\"Modal window\" /modal\n");
         return;
     }
@@ -236,24 +246,25 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
     COLORREF textColor = RGB(0, 0, 0); // 默认黑色文字
     BOOL modal = FALSE;
     BOOL noDrag = FALSE;
+    BOOL bold = FALSE;
     BOOL hasText = FALSE;
     
     for (int i = 2; i < argc; i++) {
-        if (strncmp(argv[i], "/text:", 6) == 0) {
-            message = argv[i] + 6;
+        if (strncmp(argv[i], "--text=", 7) == 0) {
+            message = argv[i] + 7;
             hasText = TRUE;
-        } else if (strncmp(argv[i], "/title:", 7) == 0) {
-            strncpy(title, argv[i] + 7, sizeof(title) - 1);
+        } else if (strncmp(argv[i], "--title=", 8) == 0) {
+            strncpy(title, argv[i] + 8, sizeof(title) - 1);
             title[sizeof(title) - 1] = '\0';
-        } else if (strncmp(argv[i], "/width:", 7) == 0) {
-            width = atoi(argv[i] + 7);
-        } else if (strncmp(argv[i], "/height:", 8) == 0) {
-            height = atoi(argv[i] + 8);
-        } else if (strncmp(argv[i], "/fontsize:", 10) == 0) {
-            fontSize = atoi(argv[i] + 10);
-        } else if (strncmp(argv[i], "/bgcolor:", 9) == 0) {
+        } else if (strncmp(argv[i], "--width=", 8) == 0) {
+            width = atoi(argv[i] + 8);
+        } else if (strncmp(argv[i], "--height=", 9) == 0) {
+            height = atoi(argv[i] + 9);
+        } else if (strncmp(argv[i], "--fontsize=", 11) == 0) {
+            fontSize = atoi(argv[i] + 11);
+        } else if (strncmp(argv[i], "--bgcolor=", 10) == 0) {
             char colorStr[256];
-            strncpy(colorStr, argv[i] + 9, sizeof(colorStr) - 1);
+            strncpy(colorStr, argv[i] + 10, sizeof(colorStr) - 1);
             colorStr[sizeof(colorStr) - 1] = '\0';
             
             // 检查是否为RGB格式 (r,g,b)
@@ -266,9 +277,9 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
                 // 使用颜色名称
                 bgColor = GetColorByName(colorStr);
             }
-        } else if (strncmp(argv[i], "/textcolor:", 11) == 0) {
+        } else if (strncmp(argv[i], "--textcolor=", 12) == 0) {
             char colorStr[256];
-            strncpy(colorStr, argv[i] + 11, sizeof(colorStr) - 1);
+            strncpy(colorStr, argv[i] + 12, sizeof(colorStr) - 1);
             colorStr[sizeof(colorStr) - 1] = '\0';
             
             // 检查是否为RGB格式 (r,g,b)
@@ -281,10 +292,12 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
                 // 使用颜色名称
                 textColor = GetColorByName(colorStr);
             }
-        } else if (strcmp(argv[i], "/modal") == 0) {
+        } else if (strcmp(argv[i], "--modal") == 0) {
             modal = TRUE;
-        } else if (strcmp(argv[i], "/nodrag") == 0) {
+        } else if (strcmp(argv[i], "--nodrag") == 0) {
             noDrag = TRUE;
+        } else if (strcmp(argv[i], "--bold") == 0) {
+            bold = TRUE;
         }
     }
     
@@ -328,6 +341,7 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
     params->textColor = textColor;
     params->modal = modal;
     params->noDrag = noDrag;
+    params->bold = bold;
     
     // 注册窗口类
     WNDCLASSA wc = {0};

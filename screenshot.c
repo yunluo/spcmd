@@ -176,23 +176,23 @@ void cmd_screenshot(int argc, char* argv[]) {
     printf("Executing screenshot function...\n");
     
     // Check if help is needed
-    if (argc > 2 && (strcmp(argv[2], "/help") == 0 || strcmp(argv[2], "-h") == 0)) {
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
         printf("Screenshot command help:\n");
-        printf("  spcmd screenshot [/save:path] [/fullscreen] [/active] [/format:png|bmp] [/base64:file] [/quality:value]\n\n");
+        printf("  spcmd screenshot [--save=path] [--fullscreen] [--active] [--format=png|bmp] [--base64=file] [--quality=value]\n\n");
         printf("Parameter description:\n");
-        printf("  /save:path       - Save screenshot to specified path, default to current directory\n");
-        printf("  /fullscreen      - Capture full screen (default)\n");
-        printf("  /active          - Capture active window\n");
-        printf("  /format:png|bmp  - Save format, default is bmp\n");
-        printf("  /base64:file     - Save as Base64 encoded data to specified file\n");
-        printf("  /quality:value   - Image quality for PNG (1-100), default is 100\n\n");
+        printf("  --save=path       - Save screenshot to specified path, default to current directory\n");
+        printf("  --fullscreen      - Capture full screen (default)\n");
+        printf("  --active          - Capture active window\n");
+        printf("  --format=png|bmp  - Save format, default is bmp\n");
+        printf("  --base64=file     - Save as Base64 encoded data to specified file\n");
+        printf("  --quality=value   - Image quality for PNG (1-100), default is 100\n\n");
         printf("Examples:\n");
         printf("  spcmd screenshot\n");
-        printf("  spcmd screenshot /save:C:\\screenshots\\screen.png\n");
-        printf("  spcmd screenshot /active\n");
-        printf("  spcmd screenshot /format:png\n");
-        printf("  spcmd screenshot /base64:screenshot.b64\n");
-        printf("  spcmd screenshot /format:png /quality:80\n");
+        printf("  spcmd screenshot --save=C:\\screenshots\\screen.png\n");
+        printf("  spcmd screenshot --active\n");
+        printf("  spcmd screenshot --format=png\n");
+        printf("  spcmd screenshot --base64=screenshot.b64\n");
+        printf("  spcmd screenshot --format=png --quality=80\n");
         return;
     }
     
@@ -230,7 +230,7 @@ void cmd_screenshot(int argc, char* argv[]) {
     // Check if capturing active window
     BOOL captureActiveWindow = FALSE;
     for (int i = 2; i < argc; i++) {
-        if (strcmp(argv[i], "/active") == 0) {
+        if (strcmp(argv[i], "--active") == 0) {
             captureActiveWindow = TRUE;
             break;
         }
@@ -269,18 +269,18 @@ void cmd_screenshot(int argc, char* argv[]) {
     int quality = 80; // default quality
     
     for (int i = 2; i < argc; i++) {
-        if (strncmp(argv[i], "/save:", 6) == 0) {
-            strncpy(filename, argv[i] + 6, MAX_PATH - 1);
+        if (strncmp(argv[i], "--save=", 7) == 0) {
+            strncpy(filename, argv[i] + 7, MAX_PATH - 1);
             filename[MAX_PATH - 1] = '\0';
-        } else if (strncmp(argv[i], "/format:", 8) == 0) {
-            strncpy(format, argv[i] + 8, sizeof(format) - 1);
+        } else if (strncmp(argv[i], "--format=", 9) == 0) {
+            strncpy(format, argv[i] + 9, sizeof(format) - 1);
             format[sizeof(format) - 1] = '\0';
-        } else if (strncmp(argv[i], "/base64:", 8) == 0) {
-            strncpy(base64_filename, argv[i] + 8, MAX_PATH - 1);
+        } else if (strncmp(argv[i], "--base64=", 9) == 0) {
+            strncpy(base64_filename, argv[i] + 9, MAX_PATH - 1);
             base64_filename[MAX_PATH - 1] = '\0';
             save_as_base64 = TRUE;
-        } else if (strncmp(argv[i], "/quality:", 9) == 0) {
-            quality = atoi(argv[i] + 9);
+        } else if (strncmp(argv[i], "--quality=", 10) == 0) {
+            quality = atoi(argv[i] + 10);
             // Ensure quality is between 1 and 100
             if (quality < 1) quality = 1;
             if (quality > 100) quality = 100;
