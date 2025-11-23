@@ -886,25 +886,35 @@ void cmd_restart(int argc, char *argv[]) {
   if (argc > 2 &&
       (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("Restart command help:\n");
-    printf("  spcmd restart --path=process_path\n\n");
+    printf("  spcmd restart --path=process_path [--workdir=working_directory]\n\n");
     printf("Parameter description:\n");
-    printf("  --path=process_path  - Path to the process executable to restart "
-           "(required)\n\n");
+    printf("  --path=process_path   - Path to the process executable to restart "
+           "(required)\n");
+    printf("  --workdir=working_dir - Working directory for the process "
+           "(optional)\n\n");
     printf("Examples:\n");
     printf("  spcmd restart --path=\"C:\\Windows\\notepad.exe\"\n");
     printf("  spcmd restart --path=\"C:\\Program Files\\MyApp\\myapp.exe\"\n");
+    printf("  spcmd restart --path=\"C:\\MyApp\\myapp.exe\" "
+           "--workdir=\"C:\\MyApp\"\n");
     return;
   }
 
   // Parse parameters
   char processPath[MAX_PATH] = {0};
+  char workingDir[MAX_PATH] = {0};
   BOOL hasPath = FALSE;
+  BOOL hasWorkDir = FALSE;
 
   for (int i = 2; i < argc; i++) {
     if (strncmp(argv[i], "--path=", 7) == 0) {
-      strncpy(processPath, argv[i] + 6, MAX_PATH - 1);
+      strncpy(processPath, argv[i] + 7, MAX_PATH - 1);
       processPath[MAX_PATH - 1] = '\0';
       hasPath = TRUE;
+    } else if (strncmp(argv[i], "--workdir=", 10) == 0) {
+      strncpy(workingDir, argv[i] + 10, MAX_PATH - 1);
+      workingDir[MAX_PATH - 1] = '\0';
+      hasWorkDir = TRUE;
     }
   }
 
@@ -919,6 +929,12 @@ void cmd_restart(int argc, char *argv[]) {
   if (GetFileAttributesA(processPath) == INVALID_FILE_ATTRIBUTES) {
     printf("Error: Process file does not exist: %s\n", processPath);
     return;
+  }
+
+  // Check if working directory exists (if specified)
+  if (hasWorkDir && GetFileAttributesA(workingDir) == INVALID_FILE_ATTRIBUTES) {
+    printf("Warning: Working directory does not exist: %s\n", workingDir);
+    hasWorkDir = FALSE; // Don't use invalid working directory
   }
 
   printf("Restarting process: %s\n", processPath);
@@ -993,8 +1009,8 @@ void cmd_restart(int argc, char *argv[]) {
   si.cb = sizeof(si);
 
   // Create the process
-  if (CreateProcessA(NULL, processPath, NULL, NULL, FALSE, 0, NULL, NULL, &si,
-                     &pi)) {
+  if (CreateProcessA(NULL, processPath, NULL, NULL, FALSE, 0, NULL, 
+                     hasWorkDir ? workingDir : NULL, &si, &pi)) {
     printf("Started process: %s (PID: %lu)\n", processPath, pi.dwProcessId);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
