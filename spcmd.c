@@ -27,6 +27,7 @@
 #include <shobjidl.h>
 #include <tlhelp32.h>  // 添加这个头文件以支持进程操作
 #include <stdint.h>  // 添加这个头文件以支持uint32_t
+#include <shellapi.h>  // 添加这个头文件以支持图标提取
 
 // 添加函数声明
 void save_as_png(HBITMAP hBitmap, HDC hScreenDC, const char* filename, int quality);
@@ -37,6 +38,10 @@ void save_as_base64_data(const char* bitmap_data, DWORD data_size, const char* f
 
 // 添加window命令函数声明
 void cmd_window(int argc, char* argv[]); // 改为window命令
+
+// 添加权限检查和提升权限的函数声明
+BOOL IsRunAsAdmin();
+BOOL ElevatePrivileges(int argc, char* argv[]);
 
 // 自定义弹窗结构体，用于传递参数
 typedef struct {
@@ -65,6 +70,7 @@ void cmd_service(int argc, char* argv[]);
 void cmd_task(int argc, char* argv[]);
 void cmd_restart(int argc, char* argv[]);
 void cmd_window(int argc, char* argv[]); // 改为window命令
+char* resolve_system_variables(const char* input);
 
 int main(int argc, char* argv[]) {
     // Set console code page for UTF-8 support
@@ -113,36 +119,61 @@ void show_help() {
 }
 
 void handle_command(int argc, char* argv[]) {
-    if (strcmp(argv[1], "screenshot") == 0) {
-        cmd_screenshot(argc, argv);
-    } else if (strcmp(argv[1], "shortcut") == 0) {
-        cmd_shortcut(argc, argv);
-    } else if (strcmp(argv[1], "autorun") == 0) {
-        cmd_autorun(argc, argv);
-    } else if (strcmp(argv[1], "popup") == 0) {
-        cmd_popup(argc, argv);
-    } else if (strcmp(argv[1], "infobox") == 0) {
-        cmd_infobox(argc, argv);
-    } else if (strcmp(argv[1], "infoboxtop") == 0) {
-        cmd_infoboxtop(argc, argv);
-    } else if (strcmp(argv[1], "qbox") == 0) {
-        cmd_qbox(argc, argv);
-    } else if (strcmp(argv[1], "qboxtop") == 0) {
-        cmd_qboxtop(argc, argv);
-    } else if (strcmp(argv[1], "window") == 0) { // 改为window命令
-        cmd_window(argc, argv);
-    } else if (strcmp(argv[1], "exec2") == 0) {
-        cmd_exec2(argc, argv);
-    } else if (strcmp(argv[1], "service") == 0) {
-        cmd_service(argc, argv);
-    } else if (strcmp(argv[1], "task") == 0) {
-        cmd_task(argc, argv);
-    } else if (strcmp(argv[1], "restart") == 0) {
-        cmd_restart(argc, argv);
+    // 创建解析后的参数数组
+    char** resolved_argv = (char**)malloc(argc * sizeof(char*));
+    if (!resolved_argv) {
+        printf("Error: Memory allocation failed\n");
+        return;
+    }
+    
+    // 解析所有参数中的系统变量
+    for (int i = 0; i < argc; i++) {
+        resolved_argv[i] = resolve_system_variables(argv[i]);
+        if (!resolved_argv[i]) {
+            resolved_argv[i] = _strdup(argv[i]);
+        }
+        // 调试输出
+        // printf("参数 %d: 原始='%s', 解析后='%s'\n", i, argv[i], resolved_argv[i]);
+    }
+    
+    if (strcmp(resolved_argv[1], "screenshot") == 0) {
+        cmd_screenshot(argc, resolved_argv);
+    } else if (strcmp(resolved_argv[1], "shortcut") == 0) {
+        cmd_shortcut(argc, resolved_argv);
+    } else if (strcmp(resolved_argv[1], "autorun") == 0) {
+        cmd_autorun(argc, resolved_argv);
+    } else if (strcmp(resolved_argv[1], "popup") == 0) {
+        cmd_popup(argc, resolved_argv);
+    } else if (strcmp(resolved_argv[1], "infobox") == 0) {
+        cmd_infobox(argc, resolved_argv);
+    } else if (strcmp(resolved_argv[1], "infoboxtop") == 0) {
+        cmd_infoboxtop(argc, resolved_argv);
+    } else if (strcmp(resolved_argv[1], "qbox") == 0) {
+        cmd_qbox(argc, resolved_argv);
+    } else if (strcmp(resolved_argv[1], "qboxtop") == 0) {
+        cmd_qboxtop(argc, resolved_argv);
+    } else if (strcmp(resolved_argv[1], "window") == 0) { // 改为window命令
+        cmd_window(argc, resolved_argv);
+    } else if (strcmp(resolved_argv[1], "exec2") == 0) {
+        cmd_exec2(argc, resolved_argv);
+    } else if (strcmp(resolved_argv[1], "service") == 0) {
+        cmd_service(argc, resolved_argv);
+    } else if (strcmp(resolved_argv[1], "task") == 0) {
+        cmd_task(argc, resolved_argv);
+    } else if (strcmp(resolved_argv[1], "restart") == 0) {
+        cmd_restart(argc, resolved_argv);
     } else {
-        printf("Unknown command: %s\n", argv[1]);
+        printf("Unknown command: %s\n", resolved_argv[1]);
         show_help();
     }
+    
+    // 释放解析后的参数数组
+    for (int i = 0; i < argc; i++) {
+        if (resolved_argv[i]) {
+            free(resolved_argv[i]);
+        }
+    }
+    free(resolved_argv);
 }
 
 void cmd_screenshot(int argc, char* argv[]) {
@@ -384,20 +415,20 @@ void cmd_shortcut(int argc, char* argv[]) {
     // Parse parameters
     for (int i = 2; i < argc; i++) {
         if (strncmp(argv[i], "--target=", 9) == 0) {
-            strncpy(targetPath, argv[i] + 8, MAX_PATH - 1);
+            strncpy(targetPath, argv[i] + 9, MAX_PATH - 1);
             targetPath[MAX_PATH - 1] = '\0';
             hasTarget = TRUE;
         } else if (strncmp(argv[i], "--name=", 7) == 0) {
-            strncpy(shortcutName, argv[i] + 6, MAX_PATH - 1);
+            strncpy(shortcutName, argv[i] + 7, MAX_PATH - 1);
             shortcutName[MAX_PATH - 1] = '\0';
         } else if (strncmp(argv[i], "--desc=", 7) == 0) {
-            strncpy(description, argv[i] + 6, MAX_PATH - 1);
+            strncpy(description, argv[i] + 7, MAX_PATH - 1);
             description[MAX_PATH - 1] = '\0';
         } else if (strncmp(argv[i], "--icon=", 7) == 0) {
-            strncpy(iconPath, argv[i] + 6, MAX_PATH - 1);
+            strncpy(iconPath, argv[i] + 7, MAX_PATH - 1);
             iconPath[MAX_PATH - 1] = '\0';
         } else if (strncmp(argv[i], "--workdir=", 10) == 0) {
-            strncpy(workingDir, argv[i] + 9, MAX_PATH - 1);
+            strncpy(workingDir, argv[i] + 10, MAX_PATH - 1);
             workingDir[MAX_PATH - 1] = '\0';
         }
     }
@@ -472,6 +503,8 @@ void cmd_shortcut(int argc, char* argv[]) {
         // Set icon
         if (strlen(iconPath) > 0) {
             IShellLinkA_SetIconLocation(pShellLink, iconPath, 0);
+        } else {
+            IShellLinkA_SetIconLocation(pShellLink, targetPath, 0);
         }
         
         // Save shortcut
@@ -500,14 +533,280 @@ void cmd_shortcut(int argc, char* argv[]) {
     }
     
     CoUninitialize();
+    
+    // Refresh desktop to show the new shortcut icon
+    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
 }
 
 void cmd_autorun(int argc, char* argv[]) {
-    (void)argc; // 消除未使用参数警告
-    (void)argv; // 消除未使用参数警告
-    printf("配置开机自启...\n");
-    // TODO: 实现开机自启功能
-    printf("[未实现] 开机自启配置功能将在后续版本中实现\n");
+    // Check if help is needed
+    if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
+        printf("Autorun command help:\n");
+        printf("  spcmd autorun --target=path [--name=name] [--args=args] [--workdir=dir] [--remove]\n\n");
+        printf("Parameter description:\n");
+        printf("  --target=path   - Target program path (required)\n");
+        printf("  --name=name     - Autorun entry name, default is program name\n");
+        printf("  --args=args     - Program startup arguments\n");
+        printf("  --workdir=dir   - Working directory\n");
+        printf("  --remove        - Remove autorun entry\n\n");
+        printf("Examples:\n");
+        printf("  spcmd autorun --target=C:\\Windows\\notepad.exe\n");
+        printf("  spcmd autorun --target=C:\\Windows\\notepad.exe --name=Notepad --args=\"C:\\temp\\test.txt\"\n");
+        printf("  spcmd autorun --target=C:\\Windows\\notepad.exe --remove\n");
+        return;
+    }
+    
+    // Check required parameters
+    char targetPath[MAX_PATH] = {0};
+    char entryName[MAX_PATH] = {0};
+    char arguments[MAX_PATH] = {0};
+    char workingDir[MAX_PATH] = {0};
+    BOOL removeEntry = FALSE;
+    
+    BOOL hasTarget = FALSE;
+    
+    // Parse parameters
+    for (int i = 2; i < argc; i++) {
+        if (strncmp(argv[i], "--target=", 9) == 0) {
+            strncpy(targetPath, argv[i] + 9, MAX_PATH - 1);
+            targetPath[MAX_PATH - 1] = '\0';
+            hasTarget = TRUE;
+        } else if (strncmp(argv[i], "--name=", 7) == 0) {
+            strncpy(entryName, argv[i] + 7, MAX_PATH - 1);
+            entryName[MAX_PATH - 1] = '\0';
+        } else if (strncmp(argv[i], "--args=", 7) == 0) {
+            strncpy(arguments, argv[i] + 7, MAX_PATH - 1);
+            arguments[MAX_PATH - 1] = '\0';
+        } else if (strncmp(argv[i], "--workdir=", 10) == 0) {
+            strncpy(workingDir, argv[i] + 10, MAX_PATH - 1);
+            workingDir[MAX_PATH - 1] = '\0';
+        } else if (strcmp(argv[i], "--remove") == 0) {
+            removeEntry = TRUE;
+        }
+    }
+    
+    // Check required parameters
+    if (!hasTarget) {
+        printf("Error: Target program path must be specified (--target=path)\n");
+        printf("Use spcmd autorun --help for help\n");
+        return;
+    }
+    
+    // If entry name is not specified, use target filename
+    if (strlen(entryName) == 0) {
+        char* fileName = strrchr(targetPath, '\\');
+        if (fileName != NULL) {
+            strncpy(entryName, fileName + 1, MAX_PATH - 1);
+        } else {
+            strncpy(entryName, targetPath, MAX_PATH - 1);
+        }
+        
+        // Remove extension
+        char* dot = strrchr(entryName, '.');
+        if (dot != NULL) {
+            *dot = '\0';
+        }
+    }
+    
+    // Add .lnk extension
+    char finalName[MAX_PATH];
+    snprintf(finalName, MAX_PATH, "%s.lnk", entryName);
+    
+    // Try to use system startup directory first (requires admin rights)
+    char startupPath[MAX_PATH];
+    BOOL useSystemStartup = TRUE;
+    
+    // Get system startup directory
+    if (FAILED(SHGetFolderPathA(NULL, CSIDL_COMMON_STARTUP, NULL, SHGFP_TYPE_CURRENT, startupPath))) {
+        // Fall back to user startup directory
+        useSystemStartup = FALSE;
+        if (FAILED(SHGetFolderPathA(NULL, CSIDL_STARTUP, NULL, SHGFP_TYPE_CURRENT, startupPath))) {
+            printf("Error: Unable to get startup directory\n");
+            return;
+        }
+    }
+    
+    // Construct shortcut full path
+    char shortcutPath[MAX_PATH];
+    snprintf(shortcutPath, MAX_PATH, "%s\\%s", startupPath, finalName);
+    
+    if (removeEntry) {
+        // Remove autorun entry (shortcut)
+        BOOL removed = FALSE;
+        
+        // Try to remove from the primary location
+        if (DeleteFileA(shortcutPath)) {
+            printf("Autorun entry removed: %s\n", entryName);
+            if (useSystemStartup) {
+                printf("From system startup directory\n");
+            } else {
+                printf("From user startup directory\n");
+            }
+            removed = TRUE;
+        }
+        
+        // If not removed from primary location, try the other location
+        if (!removed) {
+            char alternativePath[MAX_PATH];
+            if (useSystemStartup) {
+                // Try user startup directory
+                char userStartupPath[MAX_PATH];
+                if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_STARTUP, NULL, SHGFP_TYPE_CURRENT, userStartupPath))) {
+                    snprintf(alternativePath, MAX_PATH, "%s\\%s", userStartupPath, finalName);
+                    if (DeleteFileA(alternativePath)) {
+                        printf("Autorun entry removed: %s\n", entryName);
+                        printf("From user startup directory\n");
+                        removed = TRUE;
+                    }
+                }
+            } else {
+                // Try system startup directory
+                char systemStartupPath[MAX_PATH];
+                if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_COMMON_STARTUP, NULL, SHGFP_TYPE_CURRENT, systemStartupPath))) {
+                    snprintf(alternativePath, MAX_PATH, "%s\\%s", systemStartupPath, finalName);
+                    if (DeleteFileA(alternativePath)) {
+                        printf("Autorun entry removed: %s\n", entryName);
+                        printf("From system startup directory\n");
+                        removed = TRUE;
+                    }
+                }
+            }
+        }
+        
+        // If still not removed, report error
+        if (!removed) {
+            DWORD error = GetLastError();
+            if (error == ERROR_FILE_NOT_FOUND) {
+                printf("Autorun entry not found: %s\n", entryName);
+            } else {
+                printf("Error: Unable to remove autorun entry: %s (Error code: %lu)\n", entryName, error);
+            }
+        }
+    } else {
+        // Add or update autorun entry (create shortcut)
+        
+        // 检查是否需要管理员权限来创建系统开机自启项
+        BOOL needAdmin = useSystemStartup;
+        
+        // 如果需要管理员权限但当前没有管理员权限，则尝试提升权限
+        if (needAdmin && !IsRunAsAdmin()) {
+            printf("需要管理员权限来创建系统开机自启项，正在请求权限提升...\n");
+            
+            // 尝试提升权限
+            if (ElevatePrivileges(argc, argv)) {
+                // 如果提升成功，程序会以管理员权限重新运行，当前进程会退出
+                return;
+            } else {
+                // 如果提升失败，回退到用户开机自启
+                printf("权限提升失败，回退到用户开机自启...\n");
+                useSystemStartup = FALSE;
+                
+                // 重新获取用户启动目录
+                if (FAILED(SHGetFolderPathA(NULL, CSIDL_STARTUP, NULL, SHGFP_TYPE_CURRENT, startupPath))) {
+                    printf("Error: Unable to get user startup directory\n");
+                    return;
+                }
+                
+                // 重新构造快捷方式路径
+                snprintf(shortcutPath, MAX_PATH, "%s\\%s", startupPath, finalName);
+            }
+        }
+        
+        CoInitialize(NULL);
+        
+        IShellLinkA* pShellLink = NULL;
+        HRESULT hres = CoCreateInstance(&CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, &IID_IShellLinkA, (LPVOID*)&pShellLink);
+        
+        if (SUCCEEDED(hres)) {
+            // Set target path
+            IShellLinkA_SetPath(pShellLink, targetPath);
+            
+            // Set working directory
+            if (strlen(workingDir) > 0) {
+                IShellLinkA_SetWorkingDirectory(pShellLink, workingDir);
+            } else {
+                // Use target file directory as working directory
+                char targetDir[MAX_PATH];
+                strncpy(targetDir, targetPath, MAX_PATH - 1);
+                char* lastSlash = strrchr(targetDir, '\\');
+                if (lastSlash != NULL) {
+                    *lastSlash = '\0';
+                    IShellLinkA_SetWorkingDirectory(pShellLink, targetDir);
+                }
+            }
+            
+            // Set arguments
+            if (strlen(arguments) > 0) {
+                IShellLinkA_SetArguments(pShellLink, arguments);
+            }
+            
+            // Save shortcut
+            IPersistFile* pPersistFile = NULL;
+            hres = IShellLinkA_QueryInterface(pShellLink, &IID_IPersistFile, (LPVOID*)&pPersistFile);
+            
+            if (SUCCEEDED(hres)) {
+                // Convert to wide character
+                WCHAR wsz[MAX_PATH];
+                MultiByteToWideChar(CP_ACP, 0, shortcutPath, -1, wsz, MAX_PATH);
+                
+                hres = IPersistFile_Save(pPersistFile, wsz, TRUE);
+                
+                if (SUCCEEDED(hres)) {
+                    printf("Autorun entry added/updated: %s\n", entryName);
+                    printf("Shortcut created: %s\n", shortcutPath);
+                    if (useSystemStartup) {
+                        printf("In system startup directory\n");
+                    } else {
+                        printf("In user startup directory\n");
+                    }
+                    
+                    if (strlen(arguments) > 0) {
+                        printf("Arguments: %s\n", arguments);
+                    }
+                } else {
+                    // If failed to save to system startup directory, try user startup directory
+                    if (useSystemStartup) {
+                        printf("Unable to save to system startup directory, trying user startup directory...\n");
+                        
+                        // Get user startup directory
+                        char userStartupPath[MAX_PATH];
+                        if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_STARTUP, NULL, SHGFP_TYPE_CURRENT, userStartupPath))) {
+                            // Construct new shortcut path
+                            char userShortcutPath[MAX_PATH];
+                            snprintf(userShortcutPath, MAX_PATH, "%s\\%s", userStartupPath, finalName);
+                            
+                            // Try to save to user startup directory
+                            hres = IPersistFile_Save(pPersistFile, (WCHAR*)userShortcutPath, TRUE);
+                            
+                            if (SUCCEEDED(hres)) {
+                                printf("Autorun entry added/updated: %s\n", entryName);
+                                printf("Shortcut created: %s\n", userShortcutPath);
+                                printf("In user startup directory\n");
+                                
+                                if (strlen(arguments) > 0) {
+                                    printf("Arguments: %s\n", arguments);
+                                }
+                            } else {
+                                printf("Error: Unable to save shortcut to %s\n", userShortcutPath);
+                            }
+                        } else {
+                            printf("Error: Unable to get user startup directory\n");
+                        }
+                    } else {
+                        printf("Error: Unable to save shortcut to %s\n", shortcutPath);
+                    }
+                }
+                
+                IPersistFile_Release(pPersistFile);
+            }
+            
+            IShellLinkA_Release(pShellLink);
+        } else {
+            printf("Error: Unable to create shortcut object\n");
+        }
+        
+        CoUninitialize();
+    }
 }
 
 void cmd_popup(int argc, char* argv[]) {
@@ -807,6 +1106,10 @@ void cmd_infobox(int argc, char* argv[]) {
         return;
     }
     
+    // 调试输出
+    // printf("调试: 参数2='%s'\n", argv[2]);
+    // printf("调试: 参数3='%s'\n", argv[3]);
+    
     // Display message box
     MessageBoxA(NULL, argv[2], argv[3], MB_OK | MB_ICONINFORMATION);
     printf("Message box displayed\n");
@@ -1097,6 +1400,154 @@ char* base64_encode(const unsigned char* data, size_t input_length, size_t* outp
     return encoded_data;
 }
 
+// 系统变量解析函数实现
+char* resolve_system_variables(const char* input) {
+    if (!input) return NULL;
+    
+    // 计算输出缓冲区大小（预留一些额外空间）
+    size_t input_len = strlen(input);
+    char* output = (char*)malloc(input_len * 2 + 1024);
+    if (!output) return NULL;
+    
+    size_t out_pos = 0;
+    size_t in_pos = 0;
+    
+    while (in_pos < input_len) {
+        // 查找变量开始标记 [%
+        if (input[in_pos] == '[' && input[in_pos + 1] == '%') {
+            // 查找变量结束标记 %]
+            size_t var_start = in_pos + 2;
+            size_t var_end = var_start;
+            
+            while (var_end + 1 < input_len && (input[var_end] != '%' || input[var_end + 1] != ']')) {
+                var_end++;
+            }
+            
+            if (var_end + 1 < input_len && input[var_end] == '%' && input[var_end + 1] == ']') {
+                // 找到了完整的变量格式 ~$...$
+                char var_name[256] = {0};
+                size_t var_len = var_end - var_start;
+                if (var_len < sizeof(var_name) - 1) {
+                    strncpy(var_name, &input[var_start], var_len);
+                    var_name[var_len] = '\0'; // 确保字符串结束
+                    
+                    // 解析变量
+                    char* var_value = NULL;
+                    
+                    // 处理不同类型的变量
+                    if (strncmp(var_name, "folder.", 7) == 0) {
+                        char* folder_type = var_name + 7;
+                        
+                        if (strcmp(folder_type, "desktop") == 0) {
+                            char path[MAX_PATH];
+                            if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_DESKTOPDIRECTORY, NULL, SHGFP_TYPE_CURRENT, path))) {
+                                var_value = _strdup(path);
+                            }
+                        } else if (strcmp(folder_type, "programs") == 0) {
+                            char path[MAX_PATH];
+                            if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PROGRAMS, NULL, SHGFP_TYPE_CURRENT, path))) {
+                                var_value = _strdup(path);
+                            }
+                        } else if (strcmp(folder_type, "start_menu") == 0) {
+                            char path[MAX_PATH];
+                            if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_STARTMENU, NULL, SHGFP_TYPE_CURRENT, path))) {
+                                var_value = _strdup(path);
+                            }
+                        } else if (strcmp(folder_type, "startup") == 0) {
+                            char path[MAX_PATH];
+                            if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_STARTUP, NULL, SHGFP_TYPE_CURRENT, path))) {
+                                var_value = _strdup(path);
+                            }
+                        } else if (strcmp(folder_type, "appdata") == 0) {
+                            char path[MAX_PATH];
+                            if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, path))) {
+                                var_value = _strdup(path);
+                            }
+                        } else if (strcmp(folder_type, "mydocuments") == 0) {
+                            char path[MAX_PATH];
+                            if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, path))) {
+                                var_value = _strdup(path);
+                            }
+                        } else if (strcmp(folder_type, "windows") == 0) {
+                            char path[MAX_PATH];
+                            GetWindowsDirectoryA(path, MAX_PATH);
+                            var_value = _strdup(path);
+                        } else if (strcmp(folder_type, "system") == 0) {
+                            char path[MAX_PATH];
+                            GetSystemDirectoryA(path, MAX_PATH);
+                            var_value = _strdup(path);
+                        } else if (strcmp(folder_type, "programfiles") == 0) {
+                            char path[MAX_PATH];
+                            SHGetFolderPathA(NULL, CSIDL_PROGRAM_FILES, NULL, SHGFP_TYPE_CURRENT, path);
+                            var_value = _strdup(path);
+                        }
+                    } else if (strncmp(var_name, "sys.", 4) == 0) {
+                        char* env_var = var_name + 4;
+                        char* env_value = getenv(env_var);
+                        if (env_value) {
+                            var_value = _strdup(env_value);
+                        }
+                    } else if (strcmp(var_name, "clipboard") == 0) {
+                        // 简单实现：返回固定文本（实际实现需要更复杂的剪贴板操作）
+                        var_value = _strdup("clipboard_content");
+                    }
+                    
+                    // 如果找到了变量值，则替换
+                    if (var_value) {
+                        size_t value_len = strlen(var_value);
+                        if (out_pos + value_len < input_len * 2 + 1024) {
+                            strcpy(&output[out_pos], var_value);
+                            out_pos += value_len;
+                        }
+                        free(var_value);
+                        
+                        // 跳过已处理的变量部分（包括结束标记%]）
+                        in_pos = var_end + 2;
+                    } else {
+                        // 如果未识别变量，保留原样
+                        if (out_pos + (var_end - in_pos + 2) < input_len * 2 + 1024) {
+                            strncpy(&output[out_pos], &input[in_pos], var_end - in_pos + 2);
+                            out_pos += var_end - in_pos + 2;
+                        }
+                        in_pos = var_end + 2;
+                    }
+                } else {
+                    // 变量名太长，保留原样
+                    if (out_pos + (var_end - in_pos + 2) < input_len * 2 + 1024) {
+                        strncpy(&output[out_pos], &input[in_pos], var_end - in_pos + 2);
+                        out_pos += var_end - in_pos + 2;
+                    }
+                    in_pos = var_end + 2;
+                }
+            } else {
+                // 未找到结束标记，保留[%
+                if (out_pos + 2 < input_len * 2 + 1024) {
+                    output[out_pos++] = input[in_pos++];
+                    output[out_pos++] = input[in_pos++];
+                } else {
+                    break; // 防止缓冲区溢出
+                }
+            }
+        } else {
+            // 普通字符，直接复制
+            if (out_pos < input_len * 2 + 1023) { // 留一个字符的空间给结尾\0
+                output[out_pos++] = input[in_pos++];
+            } else {
+                break; // 防止缓冲区溢出
+            }
+        }
+    }
+    
+    // 确保字符串结尾
+    if (out_pos < input_len * 2 + 1024) {
+        output[out_pos] = '\0';
+    } else {
+        output[input_len * 2 + 1023] = '\0';
+    }
+    
+    return output;
+}
+
 void save_as_base64_data(const char* bitmap_data, DWORD data_size, const char* filename) {
     size_t encoded_length;
     char* base64_data = base64_encode((const unsigned char*)bitmap_data, data_size, &encoded_length);
@@ -1155,6 +1606,9 @@ BOOL CALLBACK EnumWindowsProcEnable(HWND hwnd, LPARAM lParam) {
     EnableWindow(hwnd, TRUE);
     return TRUE;
 }
+
+// 系统变量解析函数声明
+char* resolve_system_variables(const char* input);
 
 // 根据颜色名称获取RGB值
 COLORREF GetColorByName(const char* colorName) {
@@ -1584,5 +2038,108 @@ void cmd_window(int argc, char* argv[]) { // 改为window命令
     free(params);
     free(processedMessage);
     
+}
+
+// 检查当前进程是否以管理员权限运行
+BOOL IsRunAsAdmin() {
+    BOOL fIsRunAsAdmin = FALSE;
+    DWORD dwError = ERROR_SUCCESS;
+    PSID pAdministratorsGroup = NULL;
+    
+    // 创建管理员组SID
+    SID_IDENTIFIER_AUTHORITY NtAuthority = SECURITY_NT_AUTHORITY;
+    if (!AllocateAndInitializeSid(
+        &NtAuthority, 
+        2, 
+        SECURITY_BUILTIN_DOMAIN_RID, 
+        DOMAIN_ALIAS_RID_ADMINS, 
+        0, 0, 0, 0, 0, 0, 
+        &pAdministratorsGroup)) {
+        dwError = GetLastError();
+        goto Cleanup;
+    }
+    
+    // 检查令牌是否包含管理员组
+    if (!CheckTokenMembership(NULL, pAdministratorsGroup, &fIsRunAsAdmin)) {
+        dwError = GetLastError();
+        goto Cleanup;
+    }
+    
+Cleanup:
+    // 清理资源
+    if (pAdministratorsGroup) {
+        FreeSid(pAdministratorsGroup);
+        pAdministratorsGroup = NULL;
+    }
+    
+    // 忽略ERROR_NO_TOKEN错误，这是正常情况
+    if (ERROR_NO_TOKEN == dwError) {
+        dwError = ERROR_SUCCESS;
+    }
+    
+    return fIsRunAsAdmin;
+}
+
+// 提升权限并重新运行程序
+BOOL ElevatePrivileges(int argc, char* argv[]) {
+    wchar_t szPath[MAX_PATH];
+    wchar_t szCmdLine[1024] = {0};
+    
+    // 获取当前程序路径
+    if (!GetModuleFileNameW(NULL, szPath, MAX_PATH)) {
+        return FALSE;
+    }
+    
+    // 构建命令行参数
+    wcscat(szCmdLine, L"\"");
+    wcscat(szCmdLine, szPath);
+    wcscat(szCmdLine, L"\" ");
+    
+    // 添加原始参数
+    for (int i = 1; i < argc; i++) {
+        wchar_t argW[512];
+        MultiByteToWideChar(CP_ACP, 0, argv[i], -1, argW, 512);
+        
+        wcscat(szCmdLine, L"\"");
+        wcscat(szCmdLine, argW);
+        wcscat(szCmdLine, L"\" ");
+    }
+    
+    // 初始化SHELLEXECUTEINFO结构
+    SHELLEXECUTEINFOW sei = {0};
+    sei.cbSize = sizeof(SHELLEXECUTEINFOW);
+    sei.lpVerb = L"runas";  // 请求提升权限
+    sei.lpFile = szPath;
+    sei.lpParameters = szCmdLine + wcslen(szPath) + 3; // 跳过程序路径部分
+    sei.hwnd = NULL;
+    sei.nShow = SW_NORMAL;
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+    
+    // 尝试以管理员权限运行
+    if (!ShellExecuteExW(&sei)) {
+        DWORD dwError = GetLastError();
+        if (dwError == ERROR_CANCELLED) {
+            // 用户拒绝了UAC提示
+            printf("用户拒绝了权限提升请求\n");
+        } else {
+            printf("权限提升失败，错误代码: %lu\n", dwError);
+        }
+        return FALSE;
+    }
+    
+    // 等待新进程完成
+    WaitForSingleObject(sei.hProcess, INFINITE);
+    
+    // 获取退出代码
+    DWORD exitCode;
+    GetExitCodeProcess(sei.hProcess, &exitCode);
+    
+    // 关闭进程句柄
+    CloseHandle(sei.hProcess);
+    
+    // 退出当前进程
+    ExitProcess(exitCode);
+    
+    return TRUE;
 }
 
