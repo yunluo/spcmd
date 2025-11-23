@@ -95,15 +95,24 @@ int main(int argc, char *argv[]) {
 }
 
 void show_help() {
+  printf("                                                                               \n");
+  printf("                                                                               \n");
+  printf("       oooooo  o ooooooooo       oooooo    ooo        ooooo oooooooooo         \n");
+  printf("     d8P'    `Y8 `888   `Y88   d8P'  `Y8b  `88         888' `888'   `Y8b       \n");
+  printf("     Y88bo        888    d88' 888           888b     d'888   888      888      \n");
+  printf("      `'Y8888o    888ooo88P'  888           8 Y88   P  888   888      888      \n");
+  printf("          `'Y88b  888         888           8  `888'   888   888      888      \n");
+  printf("     oo      d8P  888         `88b    ooo   8    Y     888   888     d88'      \n");
+  printf("     8""88888P'    o888o         `Y8bood8P'  o8o        o888o o888bood8P'        \n");
+  printf("                                                                               \n");
+  printf("                                                                               \n");
   printf("SPCMD - System Power Command Tool\n");
   printf("Usage: spcmd <command> [parameters]\n\n");
   printf("Supported commands:\n");
   printf("  screenshot            - Capture screen screenshot\n");
   printf("  shortcut              - Create desktop shortcut\n");
   printf("  autorun               - Configure auto-start\n");
-  printf("  infobox               - Display simple message box\n");
   printf("  infoboxtop            - Display top-most message box\n");
-  printf("  qbox                  - Display question dialog box\n");
   printf("  qboxtop               - Display top-most question dialog box\n");
   printf("  window                - Display custom window with advanced "
          "features\n");
