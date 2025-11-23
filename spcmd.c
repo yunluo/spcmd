@@ -181,7 +181,7 @@ void cmd_screenshot(int argc, char *argv[]) {
 
   // Check if help is needed
   if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("Screenshot command help:\n");
     printf("  spcmd screenshot [--save=path] [--fullscreen] [--active] "
            "[--format=png|bmp] [--base64=file] [--quality=value]\n\n");
@@ -408,7 +408,7 @@ void cmd_shortcut(int argc, char *argv[]) {
 
   // Check if help is needed
   if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("Shortcut command help:\n");
     printf("  spcmd shortcut --target=path [--name=name] [--desc=description] "
            "[--icon=iconpath] [--workdir=dir]\n\n");
@@ -566,7 +566,7 @@ void cmd_shortcut(int argc, char *argv[]) {
 void cmd_autorun(int argc, char *argv[]) {
   // Check if help is needed
   if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("Autorun command help:\n");
     printf("  spcmd autorun --target=path [--name=name] [--args=args] "
            "[--workdir=dir] [--remove]\n\n");
@@ -875,7 +875,7 @@ void cmd_task(int argc, char *argv[]) {
 void cmd_restart(int argc, char *argv[]) {
   // Check if help is needed
   if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("Restart command help:\n");
     printf("  spcmd restart --path=process_path\n\n");
     printf("Parameter description:\n");
@@ -1003,7 +1003,7 @@ void cmd_exec2(int argc, char *argv[]) {
 
   // Check if help is needed
   if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("exec2 command help:\n");
     printf("  spcmd exec2 [show/hide/min/max] [working folder] [application + "
            "command-line]\n\n");
@@ -1083,7 +1083,7 @@ void cmd_infoboxtop(int argc, char *argv[]) {
 
   // Check if help is needed
   if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("infoboxtop command help:\n");
     printf("  spcmd infoboxtop [message text] [title]\n\n");
     printf("Parameter description:\n");
@@ -1122,7 +1122,7 @@ void cmd_qboxtop(int argc, char *argv[]) {
 
   // Check if help is needed
   if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("qboxtop command help:\n");
     printf("  spcmd qboxtop [message text] [title] [program to run]\n\n");
     printf("Parameter description:\n");
@@ -1801,10 +1801,10 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
   return 0;
 }
 
-void cmd_window(int argc, char *argv[]) { // 改为window命令
+void cmd_window(int argc, char *argv[]) {
   // Check if help is needed
   if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--help") == 0)) {
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("Window command help:\n");
     printf("  spcmd window --text=message [--title=title] [--width=width] "
            "[--height=height] [--fontsize=size] [--bgcolor=color] "
@@ -1904,7 +1904,7 @@ void cmd_window(int argc, char *argv[]) { // 改为window命令
     } else if (strcmp(argv[i], "--bold") == 0) {
       bold = TRUE;
     }
-  }
+  } 
 
   // Check if required parameters are provided
   if (!hasText) {
@@ -1913,7 +1913,6 @@ void cmd_window(int argc, char *argv[]) { // 改为window命令
     return;
   }
 
-  // 调试输出
 
   // 处理命令行参数中的换行符（将\\n替换为\n）
   char *processedMessage = (char *)malloc(strlen(message) * 2 + 1);
@@ -1967,7 +1966,7 @@ void cmd_window(int argc, char *argv[]) { // 改为window命令
   int y = (screenHeight - height) / 2;
 
   // 创建窗口
-  HWND hwnd = CreateWindowExA(WS_EX_TOPMOST | WS_EX_APPWINDOW, // 强制顶层显示
+  CreateWindowExA(WS_EX_TOPMOST | WS_EX_APPWINDOW, // 强制顶层显示
                               "WindowClass",
                               title, // 直接使用标题
                               noDrag ? (WS_POPUP | WS_SYSMENU | WS_VISIBLE)
@@ -1977,7 +1976,7 @@ void cmd_window(int argc, char *argv[]) { // 改为window命令
                               x, y, width, height, NULL, NULL,
                               GetModuleHandle(NULL), params);
 
-  (void)hwnd; // 防止未使用变量警告
+
 
   // 消息循环
   MSG msg;
