@@ -90,11 +90,6 @@ int main(int argc, char *argv[]) {
   SetConsoleOutputCP(CP_UTF8);
   SetConsoleCP(CP_UTF8);
   
-  // 在Windows上启用UTF-8支持
-  #ifdef _WIN32
-  setlocale(LC_ALL, "C");
-  // 设置文件I/O为UTF-8模式
-  #endif
 
   // 如果没有参数或第一个参数是帮助相关的，则显示帮助信息
   if (argc < 2 || strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "--h") == 0) {
