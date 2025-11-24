@@ -64,6 +64,7 @@ void cmd_config(int argc, char *argv[]);
 int cmd_process(int argc, char *argv[]);
 char* cmd_random(int argc, char *argv[]);
 void cmd_logrotate(int argc, char *argv[]);
+void cmd_tray(int argc, char *argv[]); // 新增托盘图标命令
 void save_as_base64_data(const char *bitmap_data, DWORD data_size, const char *filename);
 int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename, const char *format, int quality);
 // 系统变量解析函数声明
@@ -72,6 +73,14 @@ char *resolve_system_variables(const char *input);
 // 添加权限检查和提升权限的函数声明
 BOOL IsRunAsAdmin();
 BOOL ElevatePrivileges(int argc, char *argv[]);
+
+// 通用进程查找和终止函数声明
+BOOL find_process_by_name(const char* processName, DWORD* processId);
+BOOL kill_process_by_name(const char* processName);
+
+// 通用文件操作函数声明
+BOOL create_empty_file(const char* path);
+void rotate_log_file(const char* path, ULONGLONG size_bytes);
 
 // 自定义弹窗结构体，用于传递参数
 typedef struct {
@@ -131,6 +140,7 @@ void show_help() {
   printf("  process               - Check and kill processes\n");
   printf("  random                - Generate random numbers and IDs\n");
   printf("  logrotate             - Rotate and cut log files\n");
+  printf("  tray                  - System tray icon with menu\n");
   printf("\nType spcmd <command> --help for specific command help\n");
 }
 
@@ -185,6 +195,8 @@ void handle_command(int argc, char *argv[]) {
     }
   } else if (strcmp(resolved_argv[1], "logrotate") == 0) {
     cmd_logrotate(argc, resolved_argv);
+  } else if (strcmp(resolved_argv[1], "tray") == 0) {
+    cmd_tray(argc, resolved_argv);
   } else {
     printf("Unknown command: %s\n", resolved_argv[1]);
     show_help();
@@ -1189,6 +1201,7 @@ void cmd_exec2(int argc, char *argv[]) {
   si.cb = sizeof(si);
   si.dwFlags = STARTF_USESHOWWINDOW;
   si.wShowWindow = windowState;
+
   ZeroMemory(&pi, sizeof(pi));
 
   // Start the application
@@ -2700,14 +2713,13 @@ int cmd_process(int argc, char *argv[]) {
     printf("Process command help:\n");
     printf("  spcmd process [--action=check|kill] [--name=process_name] [--pid=process_id]\n\n");
     printf("Parameter description:\n");
-    printf("  --action=action       - Action: check, kill (default: check)\n");
-    printf("  --name=process_name   - Process name to check/kill (required)\n");
-    printf("  --pid=process_id      - Process ID to kill (required for kill action)\n\n");
+    printf("  --action=action       - Action to perform: check (default), kill\n");
+    printf("  --name=process_name   - Process name to check or kill\n");
+    printf("  --pid=process_id      - Process ID to check or kill\n\n");
     printf("Examples:\n");
     printf("  spcmd process --name=notepad.exe\n");
-    printf("  spcmd process --action=check --name=notepad.exe\n");
+    printf("  spcmd process --pid=1234\n");
     printf("  spcmd process --action=kill --name=notepad.exe\n");
-    printf("  spcmd process --action=kill --pid=1234\n");
     return 0;
   }
 
@@ -2716,9 +2728,6 @@ int cmd_process(int argc, char *argv[]) {
   char processName[MAX_PATH] = {0};
   DWORD processId = 0;
 
-  BOOL hasName = FALSE;
-  BOOL hasPid = FALSE;
-
   for (int i = 2; i < argc; i++) {
     if (strncmp(argv[i], "--action=", 9) == 0) {
       strncpy(action, argv[i] + 9, sizeof(action) - 1);
@@ -2726,122 +2735,150 @@ int cmd_process(int argc, char *argv[]) {
     } else if (strncmp(argv[i], "--name=", 7) == 0) {
       strncpy(processName, argv[i] + 7, MAX_PATH - 1);
       processName[MAX_PATH - 1] = '\0';
-      hasName = TRUE;
     } else if (strncmp(argv[i], "--pid=", 6) == 0) {
-      processId = (DWORD)atoi(argv[i] + 6);
-      hasPid = TRUE;
+      processId = atoi(argv[i] + 6);
     }
   }
 
-  printf("Process action: %s\n", action);
+  // Validate parameters
+  if (strlen(processName) == 0 && processId == 0) {
+    printf("Error: Either process name or PID must be specified\n");
+    printf("Use spcmd process --help for help\n");
+    return 1;
+  }
 
   if (strcmp(action, "check") == 0) {
-    // 检查进程是否存在
-    if (!hasName) {
-      printf("Error: Process name must be specified for check action\n");
-      printf("Use spcmd process --help for help\n");
-      return 1;
-    }
-    
-    printf("Checking for process: %s\n", processName);
-    
-    PROCESSENTRY32 pe32;
-    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    BOOL found = FALSE;
-
-    if (hSnapshot != INVALID_HANDLE_VALUE) {
-      pe32.dwSize = sizeof(PROCESSENTRY32);
-
-      if (Process32First(hSnapshot, &pe32)) {
-        do {
-          if (_stricmp(pe32.szExeFile, processName) == 0) {
-            // 找到匹配的进程
-            printf("Process '%s' is running (PID: %lu)\n", processName, pe32.th32ProcessID);
-            found = TRUE;
-            // 不break，继续查找可能的其他同名进程
-          }
-        } while (Process32Next(hSnapshot, &pe32));
-      }
-      CloseHandle(hSnapshot);
-      
-      if (!found) {
-        printf("Process '%s' is not running\n", processName);
-        return 1; // 返回1表示进程不存在
+    // Check if process exists
+    if (processId > 0) {
+      // Check by PID
+      HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, processId);
+      if (hProcess != NULL) {
+        printf("Process with PID %lu exists\n", processId);
+        CloseHandle(hProcess);
+        return 0; // Process exists
+      } else {
+        printf("Process with PID %lu does not exist\n", processId);
+        return 1; // Process does not exist
       }
     } else {
-      printf("Error: Unable to create process snapshot\n");
-      return 1; // 返回1表示出错
+      // Check by name
+      DWORD foundPid = 0;
+      if (find_process_by_name(processName, &foundPid)) {
+        printf("Process '%s' exists with PID %lu\n", processName, foundPid);
+        return 0; // Process exists
+      } else {
+        printf("Process '%s' does not exist\n", processName);
+        return 1; // Process does not exist
+      }
     }
-    
-    return 0; // 返回0表示进程存在
   } else if (strcmp(action, "kill") == 0) {
-    // 杀掉进程
-    if (!hasName && !hasPid) {
-      printf("Error: Process name or PID must be specified for kill action\n");
-      printf("Use spcmd process --help for help\n");
-      return 1;
-    }
-
-    if (hasPid) {
-      // 通过PID杀掉进程
+    // Kill process
+    if (processId > 0) {
+      // Kill by PID
       printf("Killing process with PID: %lu\n", processId);
       HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, processId);
       if (hProcess != NULL) {
         if (TerminateProcess(hProcess, 0)) {
           printf("Process terminated successfully\n");
+          CloseHandle(hProcess);
+          return 0;
         } else {
           printf("Error: Failed to terminate process (Error code: %lu)\n", GetLastError());
+          CloseHandle(hProcess);
+          return 1;
         }
-        CloseHandle(hProcess);
       } else {
         printf("Error: Failed to open process (Error code: %lu)\n", GetLastError());
+        return 1;
       }
     } else {
-      // 通过名称杀掉进程
+      // Kill by name
       printf("Killing process with name: %s\n", processName);
       
-      PROCESSENTRY32 pe32;
-      HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-      BOOL found = FALSE;
-
-      if (hSnapshot != INVALID_HANDLE_VALUE) {
-        pe32.dwSize = sizeof(PROCESSENTRY32);
-
-        if (Process32First(hSnapshot, &pe32)) {
-          do {
-            if (_stricmp(pe32.szExeFile, processName) == 0) {
-              // 找到匹配的进程，杀掉它
-              HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pe32.th32ProcessID);
-              if (hProcess != NULL) {
-                if (TerminateProcess(hProcess, 0)) {
-                  printf("Process '%s' (PID: %lu) terminated successfully\n", processName, pe32.th32ProcessID);
-                  found = TRUE;
-                } else {
-                  printf("Error: Failed to terminate process '%s' (PID: %lu) (Error code: %lu)\n", processName, pe32.th32ProcessID, GetLastError());
-                }
-                CloseHandle(hProcess);
-              } else {
-                printf("Error: Failed to open process '%s' (PID: %lu) (Error code: %lu)\n", processName, pe32.th32ProcessID, GetLastError());
-              }
-            }
-          } while (Process32Next(hSnapshot, &pe32));
-        }
-        CloseHandle(hSnapshot);
-        
-        if (!found) {
-          printf("Process '%s' not found\n", processName);
-        }
+      if (kill_process_by_name(processName)) {
+        return 0;
       } else {
-        printf("Error: Unable to create process snapshot\n");
+        printf("Process '%s' not found\n", processName);
+        return 1;
       }
     }
   } else {
-    printf("Error: Unknown action '%s'. Use check or kill\n", action);
-    return 1; // 返回1表示出错
+    printf("Error: Unknown action '%s'\n", action);
+    printf("Use spcmd process --help for help\n");
+    return 1;
   }
   
-  return 0; // 返回0表示成功
+  // Default return value (should never reach here due to the logic above)
+  return 1;
 }
+
+// 添加权限检查和提升权限的函数声明
+BOOL IsRunAsAdmin();
+BOOL ElevatePrivileges(int argc, char *argv[]);
+
+// 通用进程查找函数
+BOOL find_process_by_name(const char* processName, DWORD* processId) {
+  PROCESSENTRY32 pe32;
+  HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  BOOL found = FALSE;
+
+  if (hSnapshot != INVALID_HANDLE_VALUE) {
+    pe32.dwSize = sizeof(PROCESSENTRY32);
+
+    if (Process32First(hSnapshot, &pe32)) {
+      do {
+        if (_stricmp(pe32.szExeFile, processName) == 0) {
+          if (processId != NULL) {
+            *processId = pe32.th32ProcessID;
+          }
+          found = TRUE;
+          break;
+        }
+      } while (Process32Next(hSnapshot, &pe32));
+    }
+    CloseHandle(hSnapshot);
+  }
+  
+  return found;
+}
+
+// 通用进程终止函数
+BOOL kill_process_by_name(const char* processName) {
+  PROCESSENTRY32 pe32;
+  HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  BOOL found = FALSE;
+
+  if (hSnapshot != INVALID_HANDLE_VALUE) {
+    pe32.dwSize = sizeof(PROCESSENTRY32);
+
+    if (Process32First(hSnapshot, &pe32)) {
+      do {
+        if (_stricmp(pe32.szExeFile, processName) == 0) {
+          // 找到匹配的进程，杀掉它
+          HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pe32.th32ProcessID);
+          if (hProcess != NULL) {
+            if (TerminateProcess(hProcess, 0)) {
+              printf("Process '%s' with PID %lu terminated successfully\n", processName, pe32.th32ProcessID);
+            } else {
+              printf("Error: Unable to terminate process '%s' with PID %lu\n", processName, pe32.th32ProcessID);
+            }
+            CloseHandle(hProcess);
+            found = TRUE;
+          } else {
+            printf("Error: Unable to open process '%s' with PID %lu\n", processName, pe32.th32ProcessID);
+          }
+        }
+      } while (Process32Next(hSnapshot, &pe32));
+    }
+    CloseHandle(hSnapshot);
+  } else {
+    printf("Error: Unable to create process snapshot\n");
+  }
+  
+  return found;
+}
+
+
 
 // 获取系统时间戳（毫秒）
 uint64_t get_current_timestamp_ms() {
@@ -3045,78 +3082,72 @@ char* cmd_random(int argc, char *argv[]) {
 
 // 日志轮转切割命令
 void cmd_logrotate(int argc, char *argv[]) {
+  // logrotate [--path=path_to_log_file] [--maxsize=size_in_mb] [--daily]
+  // Rotates log files based on size or daily schedule.
+
   // Check if help is needed
   if (argc > 2 &&
       (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("Logrotate command help:\n");
-    printf("  spcmd logrotate [--path=path] [--size=size] [--count=count] [--daily]\n\n");
+    printf("  spcmd logrotate [--path=path_to_log_file] [--maxsize=size_in_mb] [--daily]\n\n");
     printf("Parameter description:\n");
-    printf("  --path=path           - Log file path (default: current directory)\n");
-    printf("  --size=size           - Maximum file size in MB (default: 10MB)\n");
-    printf("  --count=count         - Number of rotated files to keep (default: 5)\n");
-    printf("  --daily               - Rotate log file daily at 00:00 (default: size-based rotation)\n\n");
+    printf("  --path=path_to_log_file  - Path to the log file to rotate\n");
+    printf("  --maxsize=size_in_mb     - Maximum size in MB before rotation (default: 10)\n");
+    printf("  --daily                  - Rotate daily (default: size-based rotation)\n\n");
     printf("Examples:\n");
-    printf("  spcmd logrotate\n");
-    printf("  spcmd logrotate --path=C:\\Logs\\app.log --size=5 --count=10\n");
-    printf("  spcmd logrotate --path=C:\\Logs\\app.log --daily\n");
+    printf("  spcmd logrotate --path=\"C:\\Logs\\app.log\" --maxsize=50\n");
+    printf("  spcmd logrotate --path=\"C:\\Logs\\app.log\" --daily\n");
     return;
   }
 
   // Parse parameters
-  char path[MAX_PATH] = "app.log";  // default path
-  int max_size_mb = 10;  // default size in MB
-  int keep_count = 5;    // default number of files to keep
-  BOOL daily_rotation = FALSE; // default to size-based rotation
+  char path[MAX_PATH] = "app.log";  // default log file
+  int max_size_mb = 10;             // default max size in MB
+  BOOL daily = FALSE;               // default to size-based rotation
 
   for (int i = 2; i < argc; i++) {
     if (strncmp(argv[i], "--path=", 7) == 0) {
       strncpy(path, argv[i] + 7, MAX_PATH - 1);
       path[MAX_PATH - 1] = '\0';
-    } else if (strncmp(argv[i], "--size=", 7) == 0) {
-      max_size_mb = atoi(argv[i] + 7);
-      if (max_size_mb < 1) max_size_mb = 1;
-      if (max_size_mb > 1000) max_size_mb = 1000; // Limit to 1GB
-    } else if (strncmp(argv[i], "--count=", 8) == 0) {
-      keep_count = atoi(argv[i] + 8);
-      if (keep_count < 1) keep_count = 1;
-      if (keep_count > 100) keep_count = 100; // Limit to 100 files
+    } else if (strncmp(argv[i], "--maxsize=", 10) == 0) {
+      max_size_mb = atoi(argv[i] + 10);
+      if (max_size_mb < 1)
+        max_size_mb = 1;
     } else if (strcmp(argv[i], "--daily") == 0) {
-      daily_rotation = TRUE;
+      daily = TRUE;
     }
   }
 
-  // Check if log file exists
+  // Check if file exists
   WIN32_FILE_ATTRIBUTE_DATA fileAttr;
   if (!GetFileAttributesExA(path, GetFileExInfoStandard, &fileAttr)) {
-    printf("Error: Log file '%s' not found\n", path);
+    printf("Error: Log file '%s' does not exist or cannot be accessed\n", path);
     return;
   }
 
-  // For daily rotation, always rotate regardless of size
-  if (daily_rotation) {
-    printf("Performing daily log rotation for '%s'\n", path);
-    
-    // Get current time for backup filename
+  // Daily rotation
+  if (daily) {
+    // Get current date
     SYSTEMTIME st;
     GetLocalTime(&st);
     
-    // Create backup filename with date
+    // Create backup filename with current date
     char backup_path[MAX_PATH];
-    sprintf(backup_path, "%s.%04d-%02d-%02d", 
-            path, st.wYear, st.wMonth, st.wDay);
-
+    sprintf(backup_path, "%s.%04d%02d%02d", path, st.wYear, st.wMonth, st.wDay);
+    
+    // Check if backup file already exists for today
+    if (GetFileAttributesA(backup_path) != INVALID_FILE_ATTRIBUTES) {
+      printf("Log file already rotated today. Backup exists as '%s'\n", backup_path);
+      return;
+    }
+    
     // Rename current log file to backup
     if (MoveFileA(path, backup_path)) {
       printf("Log file rotated successfully. Backup created as '%s'\n", backup_path);
       
       // Create new empty log file
-      HANDLE hFile = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, 
-                                FILE_ATTRIBUTE_NORMAL, NULL);
-      if (hFile != INVALID_HANDLE_VALUE) {
-        CloseHandle(hFile);
+      if (create_empty_file(path)) {
         printf("New log file '%s' created\n", path);
-      } else {
-        printf("Warning: Failed to create new log file '%s'\n", path);
       }
     } else {
       printf("Error: Failed to rotate log file. Error code: %lu\n", GetLastError());
@@ -3145,6 +3176,28 @@ void cmd_logrotate(int argc, char *argv[]) {
     return;
   }
 
+  rotate_log_file(path, size_bytes);
+}
+
+// 通用创建空文件函数
+BOOL create_empty_file(const char* path) {
+  HANDLE hFile = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, 
+                            FILE_ATTRIBUTE_NORMAL, NULL);
+  if (hFile != INVALID_HANDLE_VALUE) {
+    CloseHandle(hFile);
+    return TRUE;
+  } else {
+    printf("Warning: Failed to create file '%s'\n", path);
+    return FALSE;
+  }
+}
+
+// 通用日志文件轮转函数
+void rotate_log_file(const char* path, ULONGLONG size_bytes) {
+  if (size_bytes < 1) {
+    return;
+  }
+
   printf("Rotating log file '%s' (size: %I64u bytes)\n", path, size_bytes);
 
   // Perform log rotation
@@ -3161,15 +3214,411 @@ void cmd_logrotate(int argc, char *argv[]) {
     printf("Log file rotated successfully. Backup created as '%s'\n", backup_path);
     
     // Create new empty log file
-    HANDLE hFile = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, 
-                              FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile != INVALID_HANDLE_VALUE) {
-      CloseHandle(hFile);
+    if (create_empty_file(path)) {
       printf("New log file '%s' created\n", path);
-    } else {
-      printf("Warning: Failed to create new log file '%s'\n", path);
     }
   } else {
     printf("Error: Failed to rotate log file. Error code: %lu\n", GetLastError());
   }
 }
+
+// 托盘图标相关的常量定义
+#define WM_TRAYICON (WM_USER + 1)
+#define ID_TRAY_APP_ICON 1001
+#define ID_TRAY_EXIT 1002
+#define ID_TRAY_ABOUT 1003
+
+// 托盘图标数据结构
+typedef struct {
+  HWND hwnd;
+  HMENU hMenu;
+  NOTIFYICONDATA nid;
+  char process_name[MAX_PATH];
+  char icon_path[MAX_PATH];
+  BOOL process_running;
+  HICON hIcon;  // 存储加载的图标
+} TrayIconData;
+
+// 托盘图标窗口过程函数声明
+LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+// 检查进程是否运行的函数
+BOOL is_process_running(const char* processName) {
+  PROCESSENTRY32 pe32;
+  HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  BOOL found = FALSE;
+
+  if (hSnapshot != INVALID_HANDLE_VALUE) {
+    pe32.dwSize = sizeof(PROCESSENTRY32);
+
+    if (Process32First(hSnapshot, &pe32)) {
+      do {
+        if (_stricmp(pe32.szExeFile, processName) == 0) {
+          found = TRUE;
+          break;
+        }
+      } while (Process32Next(hSnapshot, &pe32));
+    }
+    CloseHandle(hSnapshot);
+  }
+  
+  return found;
+}
+
+// 从exe文件提取图标
+HICON extract_icon_from_exe(const char* exePath) {
+  HICON hIcon = NULL;
+  
+  // 首先尝试提取大图标
+  ExtractIconExA(exePath, 0, &hIcon, NULL, 1);
+  
+  // 如果没有提取到图标，使用默认图标
+  if (hIcon == NULL) {
+    hIcon = LoadIcon(NULL, IDI_APPLICATION);
+  }
+  
+  return hIcon;
+}
+
+// 更新托盘图标状态
+void update_tray_icon(TrayIconData* trayData) {
+  // 检查进程状态
+  trayData->process_running = is_process_running(trayData->process_name);
+  
+  // 如果进程未运行，删除托盘图标并退出
+  if (!trayData->process_running) {
+    // 删除托盘图标
+    Shell_NotifyIcon(NIM_DELETE, &trayData->nid);
+    // 发送退出消息
+    PostMessage(trayData->hwnd, WM_DESTROY, 0, 0);
+    return;
+  }
+  
+  // 进程运行时，确保托盘图标存在
+  if (trayData->nid.hWnd == NULL) {
+    // 重新添加托盘图标
+    trayData->nid.hWnd = trayData->hwnd;
+    trayData->nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    Shell_NotifyIcon(NIM_ADD, &trayData->nid);
+  }
+  
+  // 更新图标提示文本
+  snprintf(trayData->nid.szTip, sizeof(trayData->nid.szTip), 
+           "%s - Running", trayData->process_name);
+  
+  // 根据图标路径设置图标
+  if (strlen(trayData->icon_path) > 0 && PathFileExistsA(trayData->icon_path)) {
+    // 如果指定了图标路径且文件存在，使用指定图标
+    HICON hNewIcon = extract_icon_from_exe(trayData->icon_path);
+    if (hNewIcon != NULL) {
+      // 删除旧图标（如果不是系统图标）
+      if (trayData->hIcon != NULL && 
+          trayData->hIcon != LoadIcon(NULL, IDI_APPLICATION) &&
+          trayData->hIcon != LoadIcon(NULL, IDI_INFORMATION) &&
+          trayData->hIcon != LoadIcon(NULL, IDI_ERROR)) {
+        DestroyIcon(trayData->hIcon);
+      }
+      trayData->hIcon = hNewIcon;
+      trayData->nid.hIcon = trayData->hIcon;
+    }
+  } else {
+    // 进程运行时使用信息图标
+    if (trayData->hIcon != NULL) {
+      DestroyIcon(trayData->hIcon);
+    }
+    trayData->hIcon = LoadIcon(NULL, IDI_INFORMATION);
+    trayData->nid.hIcon = trayData->hIcon;
+  }
+  
+  // 更新托盘图标
+  Shell_NotifyIcon(NIM_MODIFY, &trayData->nid);
+}
+
+// 创建托盘图标 - XP兼容版本
+BOOL create_tray_icon(TrayIconData* trayData, HINSTANCE hInstance, const char* title, 
+                      const char* processName, const char* iconPath) {
+  // 注册窗口类
+  WNDCLASS wc = {0};
+  wc.lpfnWndProc = TrayWndProc;
+  wc.hInstance = hInstance;
+  wc.lpszClassName = "SPCMDTrayIconClass";
+  wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+  
+  if (!RegisterClass(&wc)) {
+    return FALSE;
+  }
+  
+  // 创建隐藏窗口
+  trayData->hwnd = CreateWindowEx(0, "SPCMDTrayIconClass", "SPCMD Tray Icon Window",
+                                  WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+                                  CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, hInstance, NULL);
+  
+  if (!trayData->hwnd) {
+    return FALSE;
+  }
+  
+  // 保存窗口实例数据
+  SetWindowLongPtr(trayData->hwnd, GWLP_USERDATA, (LONG_PTR)trayData);
+  
+  // 初始化NOTIFYICONDATA结构 - XP兼容版本
+  memset(&trayData->nid, 0, sizeof(NOTIFYICONDATA));
+  trayData->nid.cbSize = sizeof(NOTIFYICONDATA);
+  trayData->nid.hWnd = trayData->hwnd;
+  trayData->nid.uID = ID_TRAY_APP_ICON;
+  trayData->nid.uCallbackMessage = WM_TRAYICON;
+  
+  // 设置提示文本
+  strncpy(trayData->nid.szTip, title, sizeof(trayData->nid.szTip) - 1);
+  trayData->nid.szTip[sizeof(trayData->nid.szTip) - 1] = '\0';
+  
+  // 保存进程名和图标路径
+  strncpy(trayData->process_name, processName, sizeof(trayData->process_name) - 1);
+  trayData->process_name[sizeof(trayData->process_name) - 1] = '\0';
+  
+  strncpy(trayData->icon_path, iconPath, sizeof(trayData->icon_path) - 1);
+  trayData->icon_path[sizeof(trayData->icon_path) - 1] = '\0';
+  
+  // 初始化图标
+  trayData->hIcon = NULL;
+  
+  // 检查进程是否正在运行
+  trayData->process_running = is_process_running(processName);
+  
+  // 如果进程未运行，不创建托盘图标
+  if (!trayData->process_running) {
+    printf("Process '%s' is not running. Tray icon will not be displayed.\n", processName);
+    return TRUE; // 返回TRUE表示函数执行成功，但不显示图标
+  }
+  
+  // 设置初始图标
+  if (strlen(iconPath) > 0 && PathFileExistsA(iconPath)) {
+    // 如果指定了图标路径且文件存在，使用指定图标
+    trayData->hIcon = extract_icon_from_exe(iconPath);
+    trayData->nid.hIcon = trayData->hIcon;
+    trayData->nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+  } else {
+    // 否则使用信息图标
+    trayData->hIcon = LoadIcon(NULL, IDI_INFORMATION);
+    trayData->nid.hIcon = trayData->hIcon;
+    trayData->nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+  }
+  
+  // 添加托盘图标 - XP兼容版本
+  if (!Shell_NotifyIcon(NIM_ADD, &trayData->nid)) {
+    // 清理资源
+    if (trayData->hIcon != NULL && 
+        trayData->hIcon != LoadIcon(NULL, IDI_APPLICATION)) {
+      DestroyIcon(trayData->hIcon);
+    }
+    DestroyWindow(trayData->hwnd);
+    return FALSE;
+  }
+  
+  // 创建右键菜单（取消Exit菜单项）
+  trayData->hMenu = CreatePopupMenu();
+  AppendMenu(trayData->hMenu, MF_STRING, ID_TRAY_ABOUT, "About");
+  
+  return TRUE;
+}
+
+// 销毁托盘图标
+void destroy_tray_icon(TrayIconData* trayData) {
+  // 删除托盘图标
+  Shell_NotifyIcon(NIM_DELETE, &trayData->nid);
+  
+  // 销毁图标资源
+  if (trayData->hIcon != NULL && 
+      trayData->hIcon != LoadIcon(NULL, IDI_APPLICATION) &&
+      trayData->hIcon != LoadIcon(NULL, IDI_INFORMATION) &&
+      trayData->hIcon != LoadIcon(NULL, IDI_ERROR)) {
+    DestroyIcon(trayData->hIcon);
+  }
+  
+  // 销毁菜单
+  if (trayData->hMenu) {
+    DestroyMenu(trayData->hMenu);
+  }
+  
+  // 销毁窗口
+  if (trayData->hwnd) {
+    DestroyWindow(trayData->hwnd);
+  }
+}
+
+// 托盘图标窗口过程函数
+LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  TrayIconData* trayData = (TrayIconData*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+  
+  switch (msg) {
+    case WM_TRAYICON:
+      if (wParam == ID_TRAY_APP_ICON) {
+        if (lParam == WM_RBUTTONDOWN) {
+          // 右键点击显示菜单
+          POINT curPoint;
+          GetCursorPos(&curPoint);
+          
+          // 设置菜单前景窗口以确保菜单正确消失
+          SetForegroundWindow(hwnd);
+          
+          // 显示上下文菜单
+          TrackPopupMenu(trayData->hMenu, TPM_RIGHTBUTTON, curPoint.x, curPoint.y, 0, hwnd, NULL);
+        } else if (lParam == WM_LBUTTONDOWN) {
+          // 左键点击更新状态
+          update_tray_icon(trayData);
+        }
+      }
+      break;
+      
+    case WM_COMMAND:
+      switch (LOWORD(wParam)) {
+        case ID_TRAY_EXIT:
+          // 移除Exit菜单项处理
+          break;
+          
+        case ID_TRAY_ABOUT:
+          MessageBox(hwnd, "SPCMD System Tray Icon\nMonitoring process status", 
+                     "About", MB_OK | MB_ICONINFORMATION);
+          break;
+      }
+      break;
+      
+    case WM_DESTROY:
+      PostQuitMessage(0);
+      break;
+      
+    case WM_TIMER:
+      // 定时更新托盘图标状态（每5秒检查一次）
+      if (trayData) {
+        update_tray_icon(trayData);
+      }
+      break;
+      
+    default:
+      return DefWindowProc(hwnd, msg, wParam, lParam);
+  }
+  
+  return 0;
+}
+
+// 托盘图标命令
+void cmd_tray(int argc, char *argv[]) {
+  // Check if help is needed
+  if (argc > 2 &&
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
+    printf("Tray command help:\n");
+    printf("  spcmd tray [--process=name] [--title=title] [icon_path]\n");
+    printf("  spcmd tray --path=process_path [--title=title]\n\n");
+    printf("Parameter description:\n");
+    printf("  --process=name        - Process name to monitor (optional)\n");
+    printf("  --title=title         - Tray icon title (optional)\n");
+    printf("  --path=process_path   - Process path (auto detect process name and icon)\n");
+    printf("  icon_path             - Icon file path (optional, can be specified directly)\n\n");
+    printf("Examples:\n");
+    printf("  spcmd tray\n");
+    printf("  spcmd tray --process=python.exe --title=\"Python Monitor\"\n");
+    printf("  spcmd tray --process=notepad.exe C:\\Windows\\notepad.exe\n");
+    printf("  spcmd tray C:\\Windows\\notepad.exe\n");
+    printf("  spcmd tray --path=C:\\Windows\\notepad.exe\n");
+    return;
+  }
+
+  // Parse parameters
+  char process_name[MAX_PATH] = "python.exe";  // default process name
+  char title[MAX_PATH] = "SPCMD Tray";  // default title
+  char icon_path[MAX_PATH] = "";  // default icon path (use system default)
+  char process_path[MAX_PATH] = "";  // process path for auto detection
+
+  for (int i = 2; i < argc; i++) {
+    if (strncmp(argv[i], "--process=", 10) == 0) {
+      strncpy(process_name, argv[i] + 10, MAX_PATH - 1);
+      process_name[MAX_PATH - 1] = '\0';
+    } else if (strncmp(argv[i], "--title=", 8) == 0) {
+      strncpy(title, argv[i] + 8, MAX_PATH - 1);
+      title[MAX_PATH - 1] = '\0';
+    } else if (strncmp(argv[i], "--path=", 7) == 0) {
+      strncpy(process_path, argv[i] + 7, MAX_PATH - 1);
+      process_path[MAX_PATH - 1] = '\0';
+      
+      // Auto detect process name from path
+      char *fileName = strrchr(process_path, '\\');
+      if (fileName == NULL) {
+        fileName = process_path;
+      } else {
+        fileName++; // Skip the backslash
+      }
+      
+      // Copy the file name (with extension) as process name
+      strncpy(process_name, fileName, MAX_PATH - 1);
+      process_name[MAX_PATH - 1] = '\0';
+      
+      // Also use the process path as icon path
+      strncpy(icon_path, process_path, MAX_PATH - 1);
+      icon_path[MAX_PATH - 1] = '\0';
+    } else if (strncmp(argv[i], "--icon=", 7) == 0) {
+      // 保留对--icon参数的支持以保持向后兼容性
+      strncpy(icon_path, argv[i] + 7, MAX_PATH - 1);
+      icon_path[MAX_PATH - 1] = '\0';
+    } else if (argv[i][0] != '-') {
+      // 如果参数不是以-开头，则认为是图标路径
+      strncpy(icon_path, argv[i], MAX_PATH - 1);
+      icon_path[MAX_PATH - 1] = '\0';
+    }
+  }
+
+  printf("Starting system tray icon for process monitoring...\n");
+  printf("Process to monitor: %s\n", process_name);
+  printf("Title: %s\n", title);
+  if (strlen(icon_path) > 0) {
+    printf("Icon path: %s\n", icon_path);
+  }
+  
+  // 检查进程是否正在运行
+  if (!is_process_running(process_name)) {
+    printf("Process '%s' is not running. Tray icon will not be displayed.\n", process_name);
+    printf("Tray icon terminated.\n");
+    return;
+  }
+  
+  printf("Process is running. Creating tray icon...\n");
+  
+  // 初始化COM库
+  CoInitialize(NULL);
+  
+  // 创建托盘图标数据结构
+  TrayIconData trayData = {0};
+  
+  // 创建托盘图标
+  if (!create_tray_icon(&trayData, GetModuleHandle(NULL), title, process_name, icon_path)) {
+    printf("Error: Failed to create system tray icon\n");
+    CoUninitialize();
+    return;
+  }
+  
+  // 如果进程未运行，create_tray_icon已经处理了这种情况并返回TRUE但不创建图标
+  if (!trayData.process_running) {
+    printf("Tray icon terminated.\n");
+    CoUninitialize();
+    return;
+  }
+  
+  // 设置定时器，每5秒更新一次状态
+  SetTimer(trayData.hwnd, 1, 5000, NULL);
+  
+  // 初始更新图标状态
+  update_tray_icon(&trayData);
+  
+  // 消息循环
+  MSG msg;
+  while (GetMessage(&msg, NULL, 0, 0)) {
+    TranslateMessage(&msg);
+    DispatchMessage(&msg);
+  }
+  
+  // 清理资源
+  KillTimer(trayData.hwnd, 1);
+  destroy_tray_icon(&trayData);
+  CoUninitialize();
+  
+  printf("System tray icon terminated\n");
+}
+
