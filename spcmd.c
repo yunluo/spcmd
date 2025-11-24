@@ -56,7 +56,6 @@ void cmd_autorun(int argc, char *argv[]);
 void cmd_infoboxtop(int argc, char *argv[]);
 void cmd_qboxtop(int argc, char *argv[]);
 void cmd_exec2(int argc, char *argv[]);
-void cmd_service(int argc, char *argv[]);
 void cmd_task(int argc, char *argv[]);
 void cmd_restart(int argc, char *argv[]);
 void cmd_window(int argc, char *argv[]);
@@ -189,8 +188,6 @@ void handle_command(int argc, char *argv[]) {
       printf("%s", result);
       free(result);
     }
-  } else if (strcmp(resolved_argv[1], "log") == 0) {
-    printf("Error: Log command has been replaced with logrotate command\n");
   } else if (strcmp(resolved_argv[1], "logrotate") == 0) {
     cmd_logrotate(argc, resolved_argv);
   } else {
@@ -208,8 +205,6 @@ void handle_command(int argc, char *argv[]) {
 }
 
 void cmd_screenshot(int argc, char *argv[]) {
-  printf("Executing screenshot function...\n");
-
   // Check if help is needed
   if (argc > 2 &&
       (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
