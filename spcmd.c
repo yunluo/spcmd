@@ -18,6 +18,7 @@
 #define INITGUID
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+#include "ini.h"
 #include <objbase.h>
 #include <shellapi.h> // 添加这个头文件以支持图标提取
 #include <shlobj.h>
@@ -27,7 +28,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h> // 添加这个头文件以支持时间函数
 #include <tlhelp32.h> // 添加这个头文件以支持进程操作
+#include <locale.h> // 添加这个头文件以支持本地化
 #include <windows.h>
 
 
@@ -58,6 +61,10 @@ void cmd_task(int argc, char *argv[]);
 void cmd_restart(int argc, char *argv[]);
 void cmd_window(int argc, char *argv[]);
 void cmd_notify(int argc, char *argv[]);
+void cmd_config(int argc, char *argv[]);
+int cmd_process(int argc, char *argv[]);
+char* cmd_random(int argc, char *argv[]);
+void cmd_logrotate(int argc, char *argv[]);
 void save_as_base64_data(const char *bitmap_data, DWORD data_size, const char *filename);
 int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename, const char *format, int quality);
 // 系统变量解析函数声明
@@ -83,6 +90,12 @@ int main(int argc, char *argv[]) {
   // Set console code page for UTF-8 support
   SetConsoleOutputCP(CP_UTF8);
   SetConsoleCP(CP_UTF8);
+  
+  // 在Windows上启用UTF-8支持
+  #ifdef _WIN32
+  setlocale(LC_ALL, "C");
+  // 设置文件I/O为UTF-8模式
+  #endif
 
   // 如果没有参数或第一个参数是帮助相关的，则显示帮助信息
   if (argc < 2 || strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "--h") == 0) {
@@ -98,7 +111,7 @@ int main(int argc, char *argv[]) {
 
 void show_help() {
   printf("                                                                               \n");
-  printf("       oooooo  o ooooooooo       oooooo    ooo        ooooo oooooooooo         \n");
+  printf("       ooooooooo oooooooooo      ooooooo   ooo        ooooo oooooooooo         \n");
   printf("     d8P'    `Y8 `888   `Y88   d8P'  `Y8b  `88         888' `888'   `Y8b       \n");
   printf("     Y88bo        888    d88' 888           888b     d'888   888      888      \n");
   printf("      `'Y8888o    888ooo88P'  888           8 Y88   P  888   888      888      \n");
@@ -120,6 +133,10 @@ void show_help() {
   printf("  task                  - Create scheduled task\n");
   printf("  restart               - Restart specified process\n");
   printf("  notify                - Display system notification\n");
+  printf("  config                - Manage INI configuration files\n");
+  printf("  process               - Check and kill processes\n");
+  printf("  random                - Generate random numbers and IDs\n");
+  printf("  logrotate             - Rotate and cut log files\n");
   printf("\nType spcmd <command> --help for specific command help\n");
 }
 
@@ -159,6 +176,23 @@ void handle_command(int argc, char *argv[]) {
     cmd_restart(argc, resolved_argv);
   } else if (strcmp(resolved_argv[1], "notify") == 0) {
     cmd_notify(argc, resolved_argv);
+  } else if (strcmp(resolved_argv[1], "config") == 0) {
+    cmd_config(argc, resolved_argv);
+  } else if (strcmp(resolved_argv[1], "process") == 0) {
+    int result = cmd_process(argc, resolved_argv);
+    if (result != 0) {
+      exit(result); // 如果check命令返回非0值，退出程序
+    }
+  } else if (strcmp(resolved_argv[1], "random") == 0) {
+    char *result = cmd_random(argc, resolved_argv);
+    if (result != NULL) {
+      printf("%s", result);
+      free(result);
+    }
+  } else if (strcmp(resolved_argv[1], "log") == 0) {
+    printf("Error: Log command has been replaced with logrotate command\n");
+  } else if (strcmp(resolved_argv[1], "logrotate") == 0) {
+    cmd_logrotate(argc, resolved_argv);
   } else {
     printf("Unknown command: %s\n", resolved_argv[1]);
     show_help();
@@ -2373,4 +2407,779 @@ void cmd_notify(int argc, char *argv[]) {
   }
   
   printf("Notification displayed successfully\n");
+}
+
+// INI文件处理的回调函数
+struct IniEntry {
+  char section[256];
+  char name[256];
+  char value[256];
+  struct IniEntry *next;
+};
+
+struct IniData {
+  struct IniEntry *head;
+  struct IniEntry *tail;
+};
+
+// INI解析回调函数
+static int config_ini_handler(void* user, const char* section, const char* name, const char* value) {
+  struct IniData *data = (struct IniData*)user;
+  struct IniEntry *entry = (struct IniEntry*)malloc(sizeof(struct IniEntry));
+  
+  if (!entry) return 0;
+  
+  strncpy(entry->section, section, sizeof(entry->section) - 1);
+  entry->section[sizeof(entry->section) - 1] = '\0';
+  
+  strncpy(entry->name, name, sizeof(entry->name) - 1);
+  entry->name[sizeof(entry->name) - 1] = '\0';
+  
+  strncpy(entry->value, value, sizeof(entry->value) - 1);
+  entry->value[sizeof(entry->value) - 1] = '\0';
+  
+  entry->next = NULL;
+  
+  if (data->tail) {
+    data->tail->next = entry;
+  } else {
+    data->head = entry;
+  }
+  data->tail = entry;
+  
+  return 1;
+}
+
+// 释放INI数据
+void free_ini_data(struct IniData *data) {
+  struct IniEntry *entry = data->head;
+  while (entry) {
+    struct IniEntry *next = entry->next;
+    free(entry);
+    entry = next;
+  }
+  data->head = NULL;
+  data->tail = NULL;
+}
+
+// 查找INI条目
+struct IniEntry* find_ini_entry(struct IniData *data, const char *section, const char *name) {
+  struct IniEntry *entry = data->head;
+  while (entry) {
+    if (strcmp(entry->section, section) == 0 && strcmp(entry->name, name) == 0) {
+      return entry;
+    }
+    entry = entry->next;
+  }
+  return NULL;
+}
+
+// 显示所有INI条目
+void display_ini_data(struct IniData *data) {
+  struct IniEntry *entry = data->head;
+  while (entry) {
+    printf("[%s] %s = %s\n", entry->section, entry->name, entry->value);
+    entry = entry->next;
+  }
+}
+
+void cmd_config(int argc, char *argv[]) {
+  // Check if help is needed
+  if (argc > 2 &&
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
+    printf("Config command help:\n");
+    printf("  spcmd config --file=path [--action=read|write|delete] [--section=section] [--key=key] [--value=value]\n\n");
+    printf("Parameter description:\n");
+    printf("  --file=path           - INI file path (required)\n");
+    printf("  --action=action       - Action: read, write, delete (default: read)\n");
+    printf("  --section=section     - Section name (required for write/delete)\n");
+    printf("  --key=key             - Key name (required for write/delete)\n");
+    printf("  --value=value         - Value (required for write)\n\n");
+    printf("Examples:\n");
+    printf("  spcmd config --file=config.ini --action=read\n");
+    printf("  spcmd config --file=config.ini --action=write --section=General --key=Username --value=John\n");
+    printf("  spcmd config --file=config.ini --action=delete --section=General --key=Username\n");
+    return;
+  }
+
+  // Parse parameters
+  char filePath[MAX_PATH] = {0};
+  char action[20] = "read";  // default action
+  char section[256] = {0};
+  char key[256] = {0};
+  char value[256] = {0};
+
+  BOOL hasFile = FALSE;
+  BOOL hasSection = FALSE;
+  BOOL hasKey = FALSE;
+  BOOL hasValue = FALSE;
+
+  for (int i = 2; i < argc; i++) {
+    if (strncmp(argv[i], "--file=", 7) == 0) {
+      strncpy(filePath, argv[i] + 7, MAX_PATH - 1);
+      filePath[MAX_PATH - 1] = '\0';
+      hasFile = TRUE;
+    } else if (strncmp(argv[i], "--action=", 9) == 0) {
+      strncpy(action, argv[i] + 9, sizeof(action) - 1);
+      action[sizeof(action) - 1] = '\0';
+    } else if (strncmp(argv[i], "--section=", 10) == 0) {
+      strncpy(section, argv[i] + 10, sizeof(section) - 1);
+      section[sizeof(section) - 1] = '\0';
+      hasSection = TRUE;
+    } else if (strncmp(argv[i], "--key=", 6) == 0) {
+      strncpy(key, argv[i] + 6, sizeof(key) - 1);
+      key[sizeof(key) - 1] = '\0';
+      hasKey = TRUE;
+    } else if (strncmp(argv[i], "--value=", 8) == 0) {
+      strncpy(value, argv[i] + 8, sizeof(value) - 1);
+      value[sizeof(value) - 1] = '\0';
+      hasValue = TRUE;
+    }
+  }
+
+  // Check required parameters
+  if (!hasFile) {
+    printf("Error: File path must be specified\n");
+    printf("Use spcmd config --help for help\n");
+    return;
+  }
+
+  printf("Config file: %s\n", filePath);
+  printf("Action: %s\n", action);
+
+  if (strcmp(action, "read") == 0) {
+    // 读取INI文件
+    struct IniData data = {0};
+    int result = ini_parse(filePath, config_ini_handler, &data);
+    
+    if (result == 0) {
+      printf("Reading configuration:\n");
+      if (data.head) {
+        display_ini_data(&data);
+      } else {
+        printf("No entries found\n");
+      }
+      free_ini_data(&data);
+    } else if (result == -1) {
+      printf("Error: Unable to open file %s\n", filePath);
+    } else {
+      printf("Error: Parse error on line %d\n", result);
+      free_ini_data(&data);
+    }
+  } else if (strcmp(action, "write") == 0) {
+    // 写入INI文件
+    if (!hasSection || !hasKey || !hasValue) {
+      printf("Error: Section, key, and value must be specified for write action\n");
+      printf("Use spcmd config --help for help\n");
+      return;
+    }
+    
+    printf("Writing: [%s] %s = %s\n", section, key, value);
+    
+    // 读取现有配置
+    struct IniData data = {0};
+    ini_parse(filePath, config_ini_handler, &data);
+    
+    // 查找是否已存在该条目
+    struct IniEntry *entry = find_ini_entry(&data, section, key);
+    if (entry) {
+      // 更新现有条目
+      strncpy(entry->value, value, sizeof(entry->value) - 1);
+      entry->value[sizeof(entry->value) - 1] = '\0';
+      printf("Updated existing entry\n");
+    } else {
+      // 添加新条目
+      entry = (struct IniEntry*)malloc(sizeof(struct IniEntry));
+      if (entry) {
+        strncpy(entry->section, section, sizeof(entry->section) - 1);
+        entry->section[sizeof(entry->section) - 1] = '\0';
+        strncpy(entry->name, key, sizeof(entry->name) - 1);
+        entry->name[sizeof(entry->name) - 1] = '\0';
+        strncpy(entry->value, value, sizeof(entry->value) - 1);
+        entry->value[sizeof(entry->value) - 1] = '\0';
+        entry->next = NULL;
+        
+        if (data.tail) {
+          data.tail->next = entry;
+        } else {
+          data.head = entry;
+        }
+        data.tail = entry;
+        printf("Added new entry\n");
+      }
+    }
+    
+    // 写入文件
+    FILE *file = fopen(filePath, "w");
+    if (file) {
+      // 按section分组写入
+      char current_section[256] = {0};
+      struct IniEntry *entry = data.head;
+      while (entry) {
+        if (strcmp(current_section, entry->section) != 0) {
+          // 新section
+          strcpy(current_section, entry->section);
+          fprintf(file, "[%s]\n", current_section);
+        }
+        fprintf(file, "%s = %s\n", entry->name, entry->value);
+        entry = entry->next;
+      }
+      fclose(file);
+      printf("Configuration saved successfully\n");
+    } else {
+      printf("Error: Unable to write to file %s\n", filePath);
+    }
+    
+    free_ini_data(&data);
+  } else if (strcmp(action, "delete") == 0) {
+    // 删除INI条目
+    if (!hasSection || !hasKey) {
+      printf("Error: Section and key must be specified for delete action\n");
+      printf("Use spcmd config --help for help\n");
+      return;
+    }
+    
+    printf("Deleting: [%s] %s\n", section, key);
+    
+    // 读取现有配置
+    struct IniData data = {0};
+    ini_parse(filePath, config_ini_handler, &data);
+    
+    // 查找并删除条目
+    struct IniEntry *prev = NULL;
+    struct IniEntry *entry = data.head;
+    BOOL found = FALSE;
+    
+    while (entry) {
+      if (strcmp(entry->section, section) == 0 && strcmp(entry->name, key) == 0) {
+        // 找到要删除的条目
+        if (prev) {
+          prev->next = entry->next;
+        } else {
+          data.head = entry->next;
+        }
+        if (data.tail == entry) {
+          data.tail = prev;
+        }
+        free(entry);
+        found = TRUE;
+        printf("Entry deleted successfully\n");
+        break;
+      }
+      prev = entry;
+      entry = entry->next;
+    }
+    
+    if (!found) {
+      printf("Entry not found\n");
+      free_ini_data(&data);
+      return;
+    }
+    
+    // 写入文件
+    FILE *file = fopen(filePath, "w");
+    if (file) {
+      // 按section分组写入
+      char current_section[256] = {0};
+      entry = data.head;
+      while (entry) {
+        if (strcmp(current_section, entry->section) != 0) {
+          // 新section
+          strcpy(current_section, entry->section);
+          fprintf(file, "[%s]\n", current_section);
+        }
+        fprintf(file, "%s = %s\n", entry->name, entry->value);
+        entry = entry->next;
+      }
+      fclose(file);
+      printf("Configuration saved successfully\n");
+    } else {
+      printf("Error: Unable to write to file %s\n", filePath);
+    }
+    
+    free_ini_data(&data);
+  } else {
+    printf("Error: Unknown action '%s'. Use read, write, or delete\n", action);
+  }
+}
+
+int cmd_process(int argc, char *argv[]) {
+  // Check if help is needed
+  if (argc > 2 &&
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
+    printf("Process command help:\n");
+    printf("  spcmd process [--action=check|kill] [--name=process_name] [--pid=process_id]\n\n");
+    printf("Parameter description:\n");
+    printf("  --action=action       - Action: check, kill (default: check)\n");
+    printf("  --name=process_name   - Process name to check/kill (required)\n");
+    printf("  --pid=process_id      - Process ID to kill (required for kill action)\n\n");
+    printf("Examples:\n");
+    printf("  spcmd process --name=notepad.exe\n");
+    printf("  spcmd process --action=check --name=notepad.exe\n");
+    printf("  spcmd process --action=kill --name=notepad.exe\n");
+    printf("  spcmd process --action=kill --pid=1234\n");
+    return 0;
+  }
+
+  // Parse parameters
+  char action[20] = "check";  // default action
+  char processName[MAX_PATH] = {0};
+  DWORD processId = 0;
+
+  BOOL hasName = FALSE;
+  BOOL hasPid = FALSE;
+
+  for (int i = 2; i < argc; i++) {
+    if (strncmp(argv[i], "--action=", 9) == 0) {
+      strncpy(action, argv[i] + 9, sizeof(action) - 1);
+      action[sizeof(action) - 1] = '\0';
+    } else if (strncmp(argv[i], "--name=", 7) == 0) {
+      strncpy(processName, argv[i] + 7, MAX_PATH - 1);
+      processName[MAX_PATH - 1] = '\0';
+      hasName = TRUE;
+    } else if (strncmp(argv[i], "--pid=", 6) == 0) {
+      processId = (DWORD)atoi(argv[i] + 6);
+      hasPid = TRUE;
+    }
+  }
+
+  printf("Process action: %s\n", action);
+
+  if (strcmp(action, "check") == 0) {
+    // 检查进程是否存在
+    if (!hasName) {
+      printf("Error: Process name must be specified for check action\n");
+      printf("Use spcmd process --help for help\n");
+      return 1;
+    }
+    
+    printf("Checking for process: %s\n", processName);
+    
+    PROCESSENTRY32 pe32;
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    BOOL found = FALSE;
+
+    if (hSnapshot != INVALID_HANDLE_VALUE) {
+      pe32.dwSize = sizeof(PROCESSENTRY32);
+
+      if (Process32First(hSnapshot, &pe32)) {
+        do {
+          if (_stricmp(pe32.szExeFile, processName) == 0) {
+            // 找到匹配的进程
+            printf("Process '%s' is running (PID: %lu)\n", processName, pe32.th32ProcessID);
+            found = TRUE;
+            // 不break，继续查找可能的其他同名进程
+          }
+        } while (Process32Next(hSnapshot, &pe32));
+      }
+      CloseHandle(hSnapshot);
+      
+      if (!found) {
+        printf("Process '%s' is not running\n", processName);
+        return 1; // 返回1表示进程不存在
+      }
+    } else {
+      printf("Error: Unable to create process snapshot\n");
+      return 1; // 返回1表示出错
+    }
+    
+    return 0; // 返回0表示进程存在
+  } else if (strcmp(action, "kill") == 0) {
+    // 杀掉进程
+    if (!hasName && !hasPid) {
+      printf("Error: Process name or PID must be specified for kill action\n");
+      printf("Use spcmd process --help for help\n");
+      return 1;
+    }
+
+    if (hasPid) {
+      // 通过PID杀掉进程
+      printf("Killing process with PID: %lu\n", processId);
+      HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, processId);
+      if (hProcess != NULL) {
+        if (TerminateProcess(hProcess, 0)) {
+          printf("Process terminated successfully\n");
+        } else {
+          printf("Error: Failed to terminate process (Error code: %lu)\n", GetLastError());
+        }
+        CloseHandle(hProcess);
+      } else {
+        printf("Error: Failed to open process (Error code: %lu)\n", GetLastError());
+      }
+    } else {
+      // 通过名称杀掉进程
+      printf("Killing process with name: %s\n", processName);
+      
+      PROCESSENTRY32 pe32;
+      HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+      BOOL found = FALSE;
+
+      if (hSnapshot != INVALID_HANDLE_VALUE) {
+        pe32.dwSize = sizeof(PROCESSENTRY32);
+
+        if (Process32First(hSnapshot, &pe32)) {
+          do {
+            if (_stricmp(pe32.szExeFile, processName) == 0) {
+              // 找到匹配的进程，杀掉它
+              HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pe32.th32ProcessID);
+              if (hProcess != NULL) {
+                if (TerminateProcess(hProcess, 0)) {
+                  printf("Process '%s' (PID: %lu) terminated successfully\n", processName, pe32.th32ProcessID);
+                  found = TRUE;
+                } else {
+                  printf("Error: Failed to terminate process '%s' (PID: %lu) (Error code: %lu)\n", processName, pe32.th32ProcessID, GetLastError());
+                }
+                CloseHandle(hProcess);
+              } else {
+                printf("Error: Failed to open process '%s' (PID: %lu) (Error code: %lu)\n", processName, pe32.th32ProcessID, GetLastError());
+              }
+            }
+          } while (Process32Next(hSnapshot, &pe32));
+        }
+        CloseHandle(hSnapshot);
+        
+        if (!found) {
+          printf("Process '%s' not found\n", processName);
+        }
+      } else {
+        printf("Error: Unable to create process snapshot\n");
+      }
+    }
+  } else {
+    printf("Error: Unknown action '%s'. Use check or kill\n", action);
+    return 1; // 返回1表示出错
+  }
+  
+  return 0; // 返回0表示成功
+}
+
+// 获取系统时间戳（毫秒）
+uint64_t get_current_timestamp_ms() {
+  FILETIME ft;
+  GetSystemTimeAsFileTime(&ft);
+  uint64_t timestamp = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+  // 转换为Unix时间戳（毫秒）
+  timestamp /= 10000; // 100-nanosecond intervals to milliseconds
+  timestamp -= 11644473600000ULL; // 转换为Unix时间戳（从1970年1月1日开始）
+  return timestamp;
+}
+
+// 生成UUID v4
+void generate_uuid_v4(char *uuid_str) {
+  // 生成随机数据
+  uint32_t data[4];
+  for (int i = 0; i < 4; i++) {
+    data[i] = rand() * RAND_MAX + rand();
+  }
+  
+  // 设置UUID版本（第13位为0100）
+  data[1] = (data[1] & 0xFFFF0FFF) | 0x00004000;
+  
+  // 设置变体（第17位为10）
+  data[2] = (data[2] & 0x3FFFFFFF) | 0x80000000;
+  
+  // 格式化为UUID字符串
+  sprintf(uuid_str, "%08x-%04x-%04x-%04x-%04x%08x",
+          data[0],
+          data[1] & 0xFFFF,
+          (data[1] >> 16) & 0xFFFF,
+          data[2] & 0xFFFF,
+          (data[2] >> 16) & 0xFFFF,
+          data[3]);
+}
+
+// 生成UUID v7
+void generate_uuid_v7(char *uuid_str) {
+  // 获取当前时间戳（毫秒）
+  uint64_t timestamp = get_current_timestamp_ms();
+  
+  // 生成随机数据
+  uint32_t rand_a = rand() * RAND_MAX + rand();
+  uint32_t rand_b = rand() * RAND_MAX + rand();
+  
+  // UUID v7格式：
+  // 时间戳（48位）+ 随机数（12位）+ 版本（4位）+ 变体（2位）+ 随机数（62位）
+  
+  // 时间戳高位（32位）
+  uint32_t ts_high = (timestamp >> 16) & 0xFFFFFFFF;
+  
+  // 时间戳低位（16位）+ 随机数高位（12位）
+  uint32_t ts_low_rand = ((timestamp & 0xFFFF) << 12) | ((rand_a >> 20) & 0xFFF);
+  
+  // 随机数中位（16位），设置版本为0111（v7）
+  uint32_t rand_mid = (rand_a >> 4) & 0x0FFF; // 清除版本位
+  rand_mid |= 0x7000; // 设置版本为7
+  
+  // 随机数低位（16位），设置变体为10
+  uint32_t rand_low = rand_b & 0x3FFF; // 清除变体位
+  rand_low |= 0x8000; // 设置变体为10
+  
+  // 格式化为UUID字符串
+  sprintf(uuid_str, "%08x-%04x-%04x-%04x-%04x%08x",
+          ts_high,
+          ts_low_rand & 0xFFFF,
+          (ts_low_rand >> 16) & 0xFFFF,
+          rand_mid,
+          rand_low,
+          rand_b >> 16);
+}
+
+// 雪花ID生成器结构
+typedef struct {
+  uint64_t last_timestamp;
+  uint64_t node_id; // 节点ID（这里简化为固定值）
+  uint64_t sequence; // 序列号
+} snowflake_generator;
+
+// 初始化雪花ID生成器
+snowflake_generator init_snowflake() {
+  snowflake_generator sf;
+  sf.last_timestamp = 0;
+  sf.node_id = 1; // 固定节点ID
+  sf.sequence = 0;
+  return sf;
+}
+
+// 生成雪花ID
+uint64_t generate_snowflake_id(snowflake_generator *sf) {
+  uint64_t timestamp = get_current_timestamp_ms();
+  
+  // 如果时钟回拨，等待
+  if (timestamp < sf->last_timestamp) {
+    // 简单处理，实际应用中可能需要更好的策略
+    timestamp = sf->last_timestamp;
+  }
+  
+  // 如果同一毫秒内，序列号递增
+  if (timestamp == sf->last_timestamp) {
+    sf->sequence = (sf->sequence + 1) & 0xFFF; // 12位序列号
+    // 如果序列号溢出，等待下一毫秒
+    if (sf->sequence == 0) {
+      while (timestamp <= sf->last_timestamp) {
+        timestamp = get_current_timestamp_ms();
+      }
+    }
+  } else {
+    sf->sequence = 0;
+  }
+  
+  sf->last_timestamp = timestamp;
+  
+  // 组装雪花ID
+  // 时间戳（42位）+ 节点ID（10位）+ 序列号（12位）
+  uint64_t id = (timestamp << 22) | (sf->node_id << 12) | sf->sequence;
+  return id;
+}
+
+char* cmd_random(int argc, char *argv[]) {
+  // Check if help is needed
+  if (argc > 2 &&
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
+    printf("Random command help:\n");
+    printf("  spcmd random [--type=uuid4|uuid7|snowflake|number] [--count=n]\n\n");
+    printf("Parameter description:\n");
+    printf("  --type=type           - Type of random ID: uuid4, uuid7, snowflake, number (default: uuid4)\n");
+    printf("  --count=n             - Number of IDs to generate (default: 1)\n\n");
+    printf("Examples:\n");
+    printf("  spcmd random\n");
+    printf("  spcmd random --type=uuid7\n");
+    printf("  spcmd random --type=snowflake --count=5\n");
+    printf("  spcmd random --type=number\n");
+    return NULL;
+  }
+
+  // Parse parameters
+  char type[20] = "uuid4";  // default type
+  int count = 1;  // default count
+
+  for (int i = 2; i < argc; i++) {
+    if (strncmp(argv[i], "--type=", 7) == 0) {
+      strncpy(type, argv[i] + 7, sizeof(type) - 1);
+      type[sizeof(type) - 1] = '\0';
+    } else if (strncmp(argv[i], "--count=", 8) == 0) {
+      count = atoi(argv[i] + 8);
+      if (count < 1) count = 1;
+      if (count > 100) count = 100; // 限制最大数量
+    }
+  }
+
+  // 初始化随机数种子
+  srand((unsigned int)time(NULL));
+
+  // 为结果分配内存
+  char *result = (char*)malloc(4096); // 分配足够大的缓冲区
+  if (!result) {
+    printf("Error: Memory allocation failed\n");
+    return NULL;
+  }
+  result[0] = '\0'; // 初始化为空字符串
+
+  char temp[256]; // 临时缓冲区
+  
+  if (strcmp(type, "uuid4") == 0) {
+    char uuid_str[37]; // UUID字符串长度为36字符+1个结束符
+    for (int i = 0; i < count; i++) {
+      generate_uuid_v4(uuid_str);
+      sprintf(temp, "%s\n", uuid_str);
+      strcat(result, temp);
+    }
+  } else if (strcmp(type, "uuid7") == 0) {
+    char uuid_str[37]; // UUID字符串长度为36字符+1个结束符
+    for (int i = 0; i < count; i++) {
+      generate_uuid_v7(uuid_str);
+      sprintf(temp, "%s\n", uuid_str);
+      strcat(result, temp);
+    }
+  } else if (strcmp(type, "snowflake") == 0) {
+    snowflake_generator sf = init_snowflake();
+    for (int i = 0; i < count; i++) {
+      uint64_t id = generate_snowflake_id(&sf);
+      sprintf(temp, "%I64u\n", id);
+      strcat(result, temp);
+    }
+  } else if (strcmp(type, "number") == 0) {
+    for (int i = 0; i < count; i++) {
+      sprintf(temp, "%d\n", rand());
+      strcat(result, temp);
+    }
+  } else {
+    printf("Error: Unknown type '%s'. Use uuid4, uuid7, snowflake, or number\n", type);
+    free(result);
+    return NULL;
+  }
+  
+  return result;
+}
+
+
+
+// 日志轮转切割命令
+void cmd_logrotate(int argc, char *argv[]) {
+  // Check if help is needed
+  if (argc > 2 &&
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
+    printf("Logrotate command help:\n");
+    printf("  spcmd logrotate [--path=path] [--size=size] [--count=count] [--daily]\n\n");
+    printf("Parameter description:\n");
+    printf("  --path=path           - Log file path (default: current directory)\n");
+    printf("  --size=size           - Maximum file size in MB (default: 10MB)\n");
+    printf("  --count=count         - Number of rotated files to keep (default: 5)\n");
+    printf("  --daily               - Rotate log file daily at 00:00 (default: size-based rotation)\n\n");
+    printf("Examples:\n");
+    printf("  spcmd logrotate\n");
+    printf("  spcmd logrotate --path=C:\\Logs\\app.log --size=5 --count=10\n");
+    printf("  spcmd logrotate --path=C:\\Logs\\app.log --daily\n");
+    return;
+  }
+
+  // Parse parameters
+  char path[MAX_PATH] = "app.log";  // default path
+  int max_size_mb = 10;  // default size in MB
+  int keep_count = 5;    // default number of files to keep
+  BOOL daily_rotation = FALSE; // default to size-based rotation
+
+  for (int i = 2; i < argc; i++) {
+    if (strncmp(argv[i], "--path=", 7) == 0) {
+      strncpy(path, argv[i] + 7, MAX_PATH - 1);
+      path[MAX_PATH - 1] = '\0';
+    } else if (strncmp(argv[i], "--size=", 7) == 0) {
+      max_size_mb = atoi(argv[i] + 7);
+      if (max_size_mb < 1) max_size_mb = 1;
+      if (max_size_mb > 1000) max_size_mb = 1000; // Limit to 1GB
+    } else if (strncmp(argv[i], "--count=", 8) == 0) {
+      keep_count = atoi(argv[i] + 8);
+      if (keep_count < 1) keep_count = 1;
+      if (keep_count > 100) keep_count = 100; // Limit to 100 files
+    } else if (strcmp(argv[i], "--daily") == 0) {
+      daily_rotation = TRUE;
+    }
+  }
+
+  // Check if log file exists
+  WIN32_FILE_ATTRIBUTE_DATA fileAttr;
+  if (!GetFileAttributesExA(path, GetFileExInfoStandard, &fileAttr)) {
+    printf("Error: Log file '%s' not found\n", path);
+    return;
+  }
+
+  // For daily rotation, always rotate regardless of size
+  if (daily_rotation) {
+    printf("Performing daily log rotation for '%s'\n", path);
+    
+    // Get current time for backup filename
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    
+    // Create backup filename with date
+    char backup_path[MAX_PATH];
+    sprintf(backup_path, "%s.%04d-%02d-%02d", 
+            path, st.wYear, st.wMonth, st.wDay);
+
+    // Rename current log file to backup
+    if (MoveFileA(path, backup_path)) {
+      printf("Log file rotated successfully. Backup created as '%s'\n", backup_path);
+      
+      // Create new empty log file
+      HANDLE hFile = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, 
+                                FILE_ATTRIBUTE_NORMAL, NULL);
+      if (hFile != INVALID_HANDLE_VALUE) {
+        CloseHandle(hFile);
+        printf("New log file '%s' created\n", path);
+      } else {
+        printf("Warning: Failed to create new log file '%s'\n", path);
+      }
+    } else {
+      printf("Error: Failed to rotate log file. Error code: %lu\n", GetLastError());
+    }
+    
+    return;
+  }
+
+  // Size-based rotation (original behavior)
+  // Calculate file size in bytes
+  LARGE_INTEGER fileSize;
+  fileSize.LowPart = fileAttr.nFileSizeLow;
+  fileSize.HighPart = fileAttr.nFileSizeHigh;
+  unsigned long long size_bytes = ((unsigned long long)fileSize.HighPart << 32) | fileSize.LowPart;
+  unsigned long long max_size_bytes = (unsigned long long)max_size_mb * 1024 * 1024;
+
+  // Debug output
+  printf("File: %s\n", path);
+  printf("Current size: %I64u bytes\n", size_bytes);
+  printf("Threshold: %I64u bytes (%d MB)\n", max_size_bytes, max_size_mb);
+
+  // Check if file needs rotation
+  if (size_bytes < max_size_bytes) {
+    printf("Log file '%s' size (%I64u bytes) is below threshold (%I64u bytes). No rotation needed.\n", 
+           path, size_bytes, max_size_bytes);
+    return;
+  }
+
+  printf("Rotating log file '%s' (size: %I64u bytes)\n", path, size_bytes);
+
+  // Perform log rotation
+  char backup_path[MAX_PATH];
+  SYSTEMTIME st;
+  GetLocalTime(&st);
+  
+  // Create backup filename with timestamp
+  sprintf(backup_path, "%s.%04d%02d%02d_%02d%02d%02d", 
+          path, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+
+  // Rename current log file to backup
+  if (MoveFileA(path, backup_path)) {
+    printf("Log file rotated successfully. Backup created as '%s'\n", backup_path);
+    
+    // Create new empty log file
+    HANDLE hFile = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, 
+                              FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile != INVALID_HANDLE_VALUE) {
+      CloseHandle(hFile);
+      printf("New log file '%s' created\n", path);
+    } else {
+      printf("Warning: Failed to create new log file '%s'\n", path);
+    }
+  } else {
+    printf("Error: Failed to rotate log file. Error code: %lu\n", GetLastError());
+  }
 }
