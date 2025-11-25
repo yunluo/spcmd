@@ -25,10 +25,40 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+REM Check if windres (resource compiler) is available
+echo Detecting resource compiler...
+windres --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Warning: windres not found in system PATH
+    echo Resource file compilation will be skipped
+    echo Please ensure MinGW with windres is installed and added to system PATH
+)
+
 REM Compile source files - Ensure Windows XP compatibility
 echo Compiling source files ...
 echo Using Windows XP compatibility mode with size optimization...
-gcc-xp -Wall -Wextra -std=c99 -m32 -Os -D_WIN32_WINNT=0x0501 -DWINVER=0x0501 -D_WIN32_IE=0x0500 -s -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-ident -fdata-sections -ffunction-sections -Wl,--gc-sections -Wl,--strip-all spcmd.c ini.c -o spcmd.exe -lgdi32 -luser32 -lshell32 -lole32 -lshlwapi
+
+REM Check if resource file exists and compile it if possible
+set RESOBJ=
+if exist spcmd.rc (
+    echo Resource file found. Trying to compile...
+    windres --version >nul 2>&1
+    if %errorlevel% equ 0 (
+        echo Compiling resource file spcmd.rc...
+        windres -i spcmd.rc -o spcmd.res -O coff
+        if %errorlevel% equ 0 (
+            echo Resource compilation successful
+            set RESOBJ=spcmd.res
+        ) else (
+            echo Warning: Resource compilation failed, proceeding without resources
+        )
+    ) else (
+        echo Skipping resource compilation as windres is not available
+    )
+)
+
+REM Main compilation command with or without resources
+gcc-xp -Wall -Wextra -std=c99 -m32 -Os -D_WIN32_WINNT=0x0501 -DWINVER=0x0501 -D_WIN32_IE=0x0500 -s -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-ident -fdata-sections -ffunction-sections -Wl,--gc-sections -Wl,--strip-all spcmd.c ini.c %RESOBJ% -o spcmd.exe -lgdi32 -luser32 -lshell32 -lole32 -lshlwapi
 
 REM Check if compilation was successful
 if %errorlevel% neq 0 (
@@ -45,8 +75,21 @@ echo.
 REM Check if executable was generated
 if exist spcmd.exe (
     echo Build completed.
-    echo Executable size:
+    echo Original executable size:
     for %%I in (spcmd.exe) do echo %%~zI bytes
+    
+    REM Try to use UPX for compression
+    echo.
+    echo Trying to compress executable with UPX...
+    upx --best spcmd.exe >nul 2>&1
+    if %errorlevel% equ 0 (
+        echo UPX compression successful!
+        echo Compressed executable size:
+        for %%I in (spcmd.exe) do echo %%~zI bytes
+    ) else (
+        echo Warning: UPX not found or compression failed.
+        echo Skipping compression step.
+    )
 ) else (
     echo Warning: Executable file not found
 )
@@ -59,3 +102,13 @@ echo.
 
 echo Running functionality test...
 call test.bat
+
+REM Clean up temporary resource file
+if exist spcmd.res (
+    echo Cleaning up temporary resource file...
+    del spcmd.res
+)
+
+REM All operations completed successfully
+echo All operations completed successfully!
+exit /b 0

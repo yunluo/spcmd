@@ -33,6 +33,48 @@
 #include <locale.h> // 添加这个头文件以支持本地化
 #include <windows.h>
 
+// 版本和作者信息
+// 以下宏定义已被注释，因为--version功能已被移除
+// #define SPCMD_VERSION "1.0.0"
+// #define SPCMD_AUTHOR "SPCMD Team"
+// #define SPCMD_COPYRIGHT "Copyright (C) 2024 SPCMD Team"
+
+// 参数解析相关结构体和函数
+
+// 参数定义结构体
+typedef struct {
+    const char* name;         // 参数名称
+    char* value;              // 参数值
+    BOOL is_required;         // 是否必填
+    BOOL has_been_set;        // 是否已设置
+} ParamDefinition;
+
+// 参数上下文结构体
+typedef struct {
+    ParamDefinition* params;  // 参数定义数组
+    int param_count;          // 参数数量
+} ParamContext;
+
+// 创建参数上下文
+ParamContext* create_param_context(ParamDefinition* param_defs, int count);
+
+// 解析命令行参数
+BOOL parse_parameters(ParamContext* context, int argc, char* argv[], int start_arg);
+
+// 获取字符串参数
+const char* get_param_value(ParamContext* context, const char* param_name);
+
+// 获取整数参数
+int get_param_int_value(ParamContext* context, const char* param_name, int default_value);
+
+// 检查参数是否已设置
+BOOL is_param_set(ParamContext* context, const char* param_name);
+
+// 检查必填参数是否已设置
+BOOL check_required_params(ParamContext* context);
+
+// 释放参数上下文
+void free_param_context(ParamContext* context);
 
 // 定义BOOL类型，如果尚未定义
 #ifndef BOOL
@@ -49,6 +91,7 @@
 
 // 函数声明
 void show_help();
+// void show_version(); // 函数已被注释，因为--version功能已被移除
 void handle_command(int argc, char *argv[]);
 void cmd_screenshot(int argc, char *argv[]);
 void cmd_shortcut(int argc, char *argv[]);
@@ -64,7 +107,37 @@ void cmd_config(int argc, char *argv[]);
 int cmd_process(int argc, char *argv[]);
 char* cmd_random(int argc, char *argv[]);
 void cmd_logrotate(int argc, char *argv[]);
-void cmd_tray(int argc, char *argv[]); // 新增托盘图标命令
+void cmd_tray(int argc, char *argv[]);
+
+// Base64 encoding function declaration
+char *base64_encode(const unsigned char *data, size_t input_length, size_t *output_length);
+
+// 命令结构定义
+typedef struct {
+    const char* name;
+    void (*handler)(int argc, char *argv[]);
+    int returns_value; // 是否返回值（0:否, 1:是）
+} Command;
+
+// 命令表 - 优化命令分派机制
+Command command_table[] = {
+    {"screenshot", (void(*)(int, char**))cmd_screenshot, 0},
+    {"shortcut", (void(*)(int, char**))cmd_shortcut, 0},
+    {"autorun", (void(*)(int, char**))cmd_autorun, 0},
+    {"infoboxtop", (void(*)(int, char**))cmd_infoboxtop, 0},
+    {"qboxtop", (void(*)(int, char**))cmd_qboxtop, 0},
+    {"window", (void(*)(int, char**))cmd_window, 0},
+    {"exec2", (void(*)(int, char**))cmd_exec2, 0},
+    {"task", (void(*)(int, char**))cmd_task, 0},
+    {"restart", (void(*)(int, char**))cmd_restart, 0},
+    {"notify", (void(*)(int, char**))cmd_notify, 0},
+    {"config", (void(*)(int, char**))cmd_config, 0},
+    {"process", (void(*)(int, char**))cmd_process, 1},
+    {"random", (void(*)(int, char**))cmd_random, 1},
+    {"logrotate", (void(*)(int, char**))cmd_logrotate, 0},
+    {"tray", (void(*)(int, char**))cmd_tray, 0},
+    {NULL, NULL, 0} // 表结束标记
+};
 void save_as_base64_data(const char *bitmap_data, DWORD data_size, const char *filename);
 int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename, const char *format, int quality);
 // 系统变量解析函数声明
@@ -100,12 +173,20 @@ int main(int argc, char *argv[]) {
     show_help();
     return 0;
   }
+  
+  // 注意：--version参数已被移除
 
   // 处理命令
   handle_command(argc, argv);
 
   return 0;
 }
+
+// void show_version() {
+//   printf("Version: %s\n", SPCMD_VERSION);
+//   printf("Author: %s\n", SPCMD_AUTHOR);
+//   printf("%s\n\n", SPCMD_COPYRIGHT);
+// } // 函数已被注释，因为--version功能已被移除
 
 void show_help() {
   printf("                                                                               \n");
@@ -119,6 +200,7 @@ void show_help() {
   printf("                                                                               \n");
   printf("==========================================================================\n");
   printf("SPCMD - System Power Command Tool\n");
+  printf("Version: 1.0.0\n");
   printf("Usage: spcmd <command> [parameters]\n\n");
   printf("Supported commands:\n");
   printf("  screenshot            - Capture screen screenshot\n");
@@ -155,49 +237,51 @@ void handle_command(int argc, char *argv[]) {
     }
   }
 
-  if (strcmp(resolved_argv[1], "screenshot") == 0) {
-    cmd_screenshot(argc, resolved_argv);
-  } else if (strcmp(resolved_argv[1], "shortcut") == 0) {
-    cmd_shortcut(argc, resolved_argv);
-  } else if (strcmp(resolved_argv[1], "autorun") == 0) {
-    cmd_autorun(argc, resolved_argv);
-  } else if (strcmp(resolved_argv[1], "infoboxtop") == 0) {
-    cmd_infoboxtop(argc, resolved_argv);
-  } else if (strcmp(resolved_argv[1], "qboxtop") == 0) {
-    cmd_qboxtop(argc, resolved_argv);
-  } else if (strcmp(resolved_argv[1], "window") == 0) {
-    cmd_window(argc, resolved_argv);
-  } else if (strcmp(resolved_argv[1], "exec2") == 0) {
-    cmd_exec2(argc, resolved_argv);
-  } else if (strcmp(resolved_argv[1], "task") == 0) {
-    cmd_task(argc, resolved_argv);
-  } else if (strcmp(resolved_argv[1], "restart") == 0) {
-    cmd_restart(argc, resolved_argv);
-  } else if (strcmp(resolved_argv[1], "notify") == 0) {
-    cmd_notify(argc, resolved_argv);
-  } else if (strcmp(resolved_argv[1], "config") == 0) {
-    cmd_config(argc, resolved_argv);
-  } else if (strcmp(resolved_argv[1], "process") == 0) {
-    int result = cmd_process(argc, resolved_argv);
-    if (result != 0) {
-      exit(result); // 如果check命令返回非0值，退出程序
+  // 使用命令表查找并执行命令 - 优化的命令分派机制
+  const char* command_name = resolved_argv[1];
+  BOOL command_found = FALSE;
+  
+  for (int i = 0; command_table[i].name != NULL; i++) {
+    if (strcmp(command_table[i].name, command_name) == 0) {
+      command_found = TRUE;
+      
+      // 特殊处理有返回值的命令
+      if (command_table[i].returns_value) {
+        if (strcmp(command_name, "process") == 0) {
+          int result = cmd_process(argc, resolved_argv);
+          if (result != 0) {
+            // 释放资源后再退出
+            for (int j = 0; j < argc; j++) {
+              if (resolved_argv[j]) {
+                free(resolved_argv[j]);
+              }
+            }
+            free(resolved_argv);
+            exit(result); // 如果check命令返回非0值，退出程序
+          }
+        } else if (strcmp(command_name, "random") == 0) {
+          char *result = cmd_random(argc, resolved_argv);
+          if (result != NULL) {
+            printf("%s", result);
+            free(result);
+          } else {
+            // 如果random命令返回NULL，确保有适当的输出
+            // 这可能发生在帮助请求或错误情况下
+            // cmd_random函数在这些情况下已经输出了信息，所以这里不需要额外输出
+          }
+        }
+      } else {
+        // 常规命令调用
+        command_table[i].handler(argc, resolved_argv);
+      }
+      
+      break;
     }
-  } else if (strcmp(resolved_argv[1], "random") == 0) {
-    char *result = cmd_random(argc, resolved_argv);
-    if (result != NULL) {
-      printf("%s", result);
-      free(result);
-    } else {
-      // 如果random命令返回NULL，确保有适当的输出
-      // 这可能发生在帮助请求或错误情况下
-      // cmd_random函数在这些情况下已经输出了信息，所以这里不需要额外输出
-    }
-  } else if (strcmp(resolved_argv[1], "logrotate") == 0) {
-    cmd_logrotate(argc, resolved_argv);
-  } else if (strcmp(resolved_argv[1], "tray") == 0) {
-    cmd_tray(argc, resolved_argv);
-  } else {
-    printf("Unknown command: %s\n", resolved_argv[1]);
+  }
+  
+  // 处理未知命令
+  if (!command_found) {
+    printf("Unknown command: %s\n", command_name);
     show_help();
   }
 
@@ -215,11 +299,12 @@ void cmd_screenshot(int argc, char *argv[]) {
   if (argc > 2 &&
       (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("Screenshot command help:\n");
-    printf("  spcmd screenshot [--save=path] [--fullscreen] "
+    printf("  spcmd screenshot [--save=path|base64] [--fullscreen] "
            "[--format=png|bmp] [--base64=file] [--quality=value]\n\n");
     printf("Parameter description:\n");
     printf("  --save=path       - Save screenshot to specified path, default "
            "to current directory\n");
+    printf("  --save=base64     - Output screenshot as Base64 encoded text to console\n");
     printf("  --fullscreen      - Capture full screen (default)\n");
     printf("  --format=png|jpg|bmp  - Save format, default is bmp\n");
     printf("  --base64=file     - Save as Base64 encoded data to specified "
@@ -229,6 +314,7 @@ void cmd_screenshot(int argc, char *argv[]) {
     printf("Examples:\n");
     printf("  spcmd screenshot\n");
     printf("  spcmd screenshot --save=C:\\screenshots\\screen.png\n");
+    printf("  spcmd screenshot --save=base64\n");
     printf("  spcmd screenshot --format=png\n");
     printf("  spcmd screenshot --format=jpg\n");
     printf("  spcmd screenshot --base64=screenshot.b64\n");
@@ -280,12 +366,19 @@ void cmd_screenshot(int argc, char *argv[]) {
   char format[10] = "bmp";              // default format
   char base64_filename[MAX_PATH] = {0}; // for base64 encoded data
   BOOL save_as_base64 = FALSE;
+  BOOL output_base64_to_console = FALSE; // Flag for --save=base64
   int quality = 100; // default quality
 
   for (int i = 2; i < argc; i++) {
     if (strncmp(argv[i], "--save=", 7) == 0) {
-      strncpy(filename, argv[i] + 7, MAX_PATH - 1);
-      filename[MAX_PATH - 1] = '\0';
+      if (strcmp(argv[i] + 7, "base64") == 0) {
+        // Special case: output base64 to console
+        output_base64_to_console = TRUE;
+      } else {
+        // Normal case: save to file
+        strncpy(filename, argv[i] + 7, MAX_PATH - 1);
+        filename[MAX_PATH - 1] = '\0';
+      }
     } else if (strncmp(argv[i], "--format=", 9) == 0) {
       strncpy(format, argv[i] + 9, sizeof(format) - 1);
       format[sizeof(format) - 1] = '\0';
@@ -304,9 +397,9 @@ void cmd_screenshot(int argc, char *argv[]) {
     }
   }
 
-  // Handle base64 encoded data save
+  // Handle base64 encoded data save to file
   if (save_as_base64) {
-    // Save as base64 encoded data
+    // Save as base64 encoded data to file
     BITMAP bmp;
     GetObject(hBitmap, sizeof(BITMAP), &bmp);
 
@@ -327,13 +420,50 @@ void cmd_screenshot(int argc, char *argv[]) {
     GetDIBits(hScreenDC, hBitmap, 0, (UINT)bmp.bmHeight, lpbitmap,
               (BITMAPINFO *)&bi, DIB_RGB_COLORS);
 
-    // Save as base64 encoded data
+    // Save as base64 encoded data to file
     save_as_base64_data(lpbitmap, dwBmpSize, base64_filename);
 
     // Clean up resources
     GlobalUnlock(hDIB);
     GlobalFree(hDIB);
-  } else {
+  } 
+  // Handle base64 encoded data output to console
+  else if (output_base64_to_console) {
+    // Save bitmap to memory first with the specified format
+    char temp_filename[MAX_PATH] = "temp_screenshot.png";
+    int result = save_bitmap_as_format(hBitmap, hScreenDC, temp_filename, format, quality);
+    
+    if (result) {
+      // Read the saved file and encode it to base64
+      HANDLE hFile = CreateFile(temp_filename, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+      if (hFile != INVALID_HANDLE_VALUE) {
+        DWORD file_size = GetFileSize(hFile, NULL);
+        if (file_size != INVALID_FILE_SIZE) {
+          char *file_data = (char *)malloc(file_size);
+          if (file_data != NULL) {
+            DWORD bytes_read;
+            if (ReadFile(hFile, file_data, file_size, &bytes_read, NULL) && bytes_read == file_size) {
+              // Encode the file data to base64
+              size_t encoded_length;
+              char *base64_data = base64_encode((const unsigned char *)file_data, file_size, &encoded_length);
+              
+              if (base64_data != NULL) {
+                // Output the base64 data to console
+                printf("%s\n", base64_data);
+                free(base64_data);
+              }
+            }
+            free(file_data);
+          }
+        }
+        CloseHandle(hFile);
+      }
+      
+      // Delete the temporary file
+      DeleteFile(temp_filename);
+    }
+  }
+  else {
     // Save bitmap in the specified format
     // Ensure filename has correct extension
     if (strcmp(format, "png") == 0 || strcmp(format, "PNG") == 0) {
@@ -1437,6 +1567,8 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
     DeleteDC(hMemoryDC);
   }
   
+  // 清理完成
+  
   return result;
 }
 
@@ -2253,43 +2385,44 @@ void cmd_notify(int argc, char *argv[]) {
     return;
   }
 
-  // Parse parameters
-  char title[MAX_PATH] = {0};
-  char message[MAX_PATH * 2] = {0};
-  char iconType[20] = "info";  // default icon
-  int timeout = 5;  // default timeout in seconds
-
-  BOOL hasTitle = FALSE;
-  BOOL hasMessage = FALSE;
-
-  for (int i = 2; i < argc; i++) {
-    if (strncmp(argv[i], "--title=", 8) == 0) {
-      strncpy(title, argv[i] + 8, MAX_PATH - 1);
-      title[MAX_PATH - 1] = '\0';
-      hasTitle = TRUE;
-    } else if (strncmp(argv[i], "--message=", 10) == 0) {
-      strncpy(message, argv[i] + 10, MAX_PATH * 2 - 1);
-      message[MAX_PATH * 2 - 1] = '\0';
-      hasMessage = TRUE;
-    } else if (strncmp(argv[i], "--icon=", 7) == 0) {
-      strncpy(iconType, argv[i] + 7, sizeof(iconType) - 1);
-      iconType[sizeof(iconType) - 1] = '\0';
-    } else if (strncmp(argv[i], "--timeout=", 10) == 0) {
-      timeout = atoi(argv[i] + 10);
-      // Ensure timeout is reasonable
-      if (timeout < 1)
-        timeout = 1;
-      if (timeout > 60)
-        timeout = 60;
-    }
-  }
-
-  // Check required parameters
-  if (!hasTitle || !hasMessage) {
-    printf("Error: Title and message must be specified\n");
-    printf("Use spcmd notify --help for help\n");
+  // 使用新的参数解析框架
+  ParamDefinition param_defs[] = {
+    {"title", NULL, TRUE, FALSE},
+    {"message", NULL, TRUE, FALSE},
+    {"icon", NULL, FALSE, FALSE},
+    {"timeout", NULL, FALSE, FALSE}
+  };
+  
+  ParamContext* context = create_param_context(param_defs, 4);
+  if (!context) {
+    printf("Error: Failed to create parameter context\n");
     return;
   }
+  
+  // 解析参数
+  parse_parameters(context, argc, argv, 2);
+  
+  // 检查必填参数
+  if (!check_required_params(context)) {
+    printf("Use spcmd notify --help for help\n");
+    free_param_context(context);
+    return;
+  }
+  
+  // 获取参数值
+  const char* title = get_param_value(context, "title");
+  const char* message = get_param_value(context, "message");
+  const char* iconType_str = get_param_value(context, "icon");
+  char iconType[20] = "info"; // 默认图标
+  if (iconType_str) {
+    strncpy(iconType, iconType_str, sizeof(iconType) - 1);
+    iconType[sizeof(iconType) - 1] = '\0';
+  }
+  
+  int timeout = get_param_int_value(context, "timeout", 5);
+  // 确保timeout在合理范围内
+  if (timeout < 1) timeout = 1;
+  if (timeout > 60) timeout = 60;
 
   printf("Displaying notification: %s\n", title);
 
@@ -2409,6 +2542,9 @@ void cmd_notify(int argc, char *argv[]) {
   }
   
   printf("Notification displayed successfully\n");
+  
+  // 释放参数上下文
+  free_param_context(context);
 }
 
 // INI文件处理的回调函数
@@ -2424,21 +2560,26 @@ struct IniData {
   struct IniEntry *tail;
 };
 
-// INI解析回调函数
+// 保留config_ini_handler以兼容ini库
+
+// INI解析回调函数 (保持兼容性)
 static int config_ini_handler(void* user, const char* section, const char* name, const char* value) {
   struct IniData *data = (struct IniData*)user;
   struct IniEntry *entry = (struct IniEntry*)malloc(sizeof(struct IniEntry));
   
   if (!entry) return 0;
   
+  memset(entry, 0, sizeof(struct IniEntry));
   strncpy(entry->section, section, sizeof(entry->section) - 1);
   entry->section[sizeof(entry->section) - 1] = '\0';
   
   strncpy(entry->name, name, sizeof(entry->name) - 1);
   entry->name[sizeof(entry->name) - 1] = '\0';
   
-  strncpy(entry->value, value, sizeof(entry->value) - 1);
-  entry->value[sizeof(entry->value) - 1] = '\0';
+  if (value) {
+    strncpy(entry->value, value, sizeof(entry->value) - 1);
+    entry->value[sizeof(entry->value) - 1] = '\0';
+  }
   
   entry->next = NULL;
   
@@ -2463,6 +2604,8 @@ void free_ini_data(struct IniData *data) {
   data->head = NULL;
   data->tail = NULL;
 }
+
+
 
 // 查找INI条目
 struct IniEntry* find_ini_entry(struct IniData *data, const char *section, const char *name) {
@@ -2701,8 +2844,8 @@ void cmd_config(int argc, char *argv[]) {
     
     free_ini_data(&data);
   } else {
-    printf("Error: Unknown action '%s'. Use read, write, or delete\n", action);
-  }
+      printf("Error: Unknown action '%s'. Use read, write, or delete\n", action);
+    }
 }
 
 int cmd_process(int argc, char *argv[]) {
@@ -3014,20 +3157,33 @@ char* cmd_random(int argc, char *argv[]) {
     return NULL;
   }
 
-  // Parse parameters
-  char type[20] = "uuid4";  // default type
-  int count = 1;  // default count
-
-  for (int i = 2; i < argc; i++) {
-    if (strncmp(argv[i], "--type=", 7) == 0) {
-      strncpy(type, argv[i] + 7, sizeof(type) - 1);
-      type[sizeof(type) - 1] = '\0';
-    } else if (strncmp(argv[i], "--count=", 8) == 0) {
-      count = atoi(argv[i] + 8);
-      if (count < 1) count = 1;
-      if (count > 100) count = 100; // 限制最大数量
-    }
+  // 使用新的参数解析框架
+  ParamDefinition param_defs[] = {
+    {"type", NULL, FALSE, FALSE},
+    {"count", NULL, FALSE, FALSE}
+  };
+  
+  ParamContext* context = create_param_context(param_defs, 2);
+  if (!context) {
+    printf("Error: Failed to create parameter context\n");
+    return NULL;
   }
+  
+  // 解析参数
+  parse_parameters(context, argc, argv, 2);
+  
+  // 获取参数值，使用默认值
+  const char* type_str = get_param_value(context, "type");
+  char type[20] = "uuid4"; // 默认类型
+  if (type_str) {
+    strncpy(type, type_str, sizeof(type) - 1);
+    type[sizeof(type) - 1] = '\0';
+  }
+  
+  int count = get_param_int_value(context, "count", 1);
+  // 限制count范围
+  if (count < 1) count = 1;
+  if (count > 100) count = 100;
 
   // 初始化随机数种子
   srand((unsigned int)time(NULL));
@@ -3613,5 +3769,130 @@ void cmd_tray(int argc, char *argv[]) {
   CoUninitialize();
   
   printf("System tray icon terminated\n");
+}
+
+// 参数解析函数实现
+
+// 创建参数上下文
+ParamContext* create_param_context(ParamDefinition* param_defs, int count) {
+    ParamContext* context = (ParamContext*)malloc(sizeof(ParamContext));
+    if (!context) return NULL;
+    
+    context->params = (ParamDefinition*)malloc(sizeof(ParamDefinition) * count);
+    if (!context->params) {
+        free(context);
+        return NULL;
+    }
+    
+    context->param_count = count;
+    
+    // 复制参数定义
+    for (int i = 0; i < count; i++) {
+        context->params[i] = param_defs[i];
+        context->params[i].value = NULL;
+        context->params[i].has_been_set = FALSE;
+    }
+    
+    return context;
+}
+
+// 解析命令行参数
+BOOL parse_parameters(ParamContext* context, int argc, char* argv[], int start_arg) {
+    if (!context) return FALSE;
+    
+    for (int i = start_arg; i < argc; i++) {
+        // 检查是否以 -- 开头的参数
+        if (strncmp(argv[i], "--", 2) == 0) {
+            char* param_name = argv[i] + 2;
+            char* equals_pos = strchr(param_name, '=');
+            
+            if (equals_pos) {
+                // 分离参数名和值
+                *equals_pos = '\0'; // 将=替换为字符串结束符
+                char* param_value = equals_pos + 1;
+                
+                // 查找对应的参数定义
+                for (int j = 0; j < context->param_count; j++) {
+                    if (strcmp(context->params[j].name, param_name) == 0) {
+                        // 分配内存并复制参数值
+                        context->params[j].value = _strdup(param_value);
+                        context->params[j].has_been_set = TRUE;
+                        break;
+                    }
+                }
+                
+                // 恢复=符号（可选，但为了不破坏原始参数）
+                *equals_pos = '=';
+            }
+        }
+    }
+    
+    return TRUE;
+}
+
+// 获取字符串参数
+const char* get_param_value(ParamContext* context, const char* param_name) {
+    if (!context || !param_name) return NULL;
+    
+    for (int i = 0; i < context->param_count; i++) {
+        if (strcmp(context->params[i].name, param_name) == 0) {
+            return context->params[i].value;
+        }
+    }
+    
+    return NULL;
+}
+
+// 获取整数参数
+int get_param_int_value(ParamContext* context, const char* param_name, int default_value) {
+    const char* str_value = get_param_value(context, param_name);
+    if (!str_value) return default_value;
+    
+    return atoi(str_value);
+}
+
+// 检查参数是否已设置
+BOOL is_param_set(ParamContext* context, const char* param_name) {
+    if (!context || !param_name) return FALSE;
+    
+    for (int i = 0; i < context->param_count; i++) {
+        if (strcmp(context->params[i].name, param_name) == 0) {
+            return context->params[i].has_been_set;
+        }
+    }
+    
+    return FALSE;
+}
+
+// 检查必填参数是否已设置
+BOOL check_required_params(ParamContext* context) {
+    if (!context) return FALSE;
+    
+    BOOL all_required_set = TRUE;
+    
+    for (int i = 0; i < context->param_count; i++) {
+        if (context->params[i].is_required && !context->params[i].has_been_set) {
+            printf("Error: Required parameter '--%s' is missing\n", context->params[i].name);
+            all_required_set = FALSE;
+        }
+    }
+    
+    return all_required_set;
+}
+
+// 释放参数上下文
+void free_param_context(ParamContext* context) {
+    if (!context) return;
+    
+    if (context->params) {
+        for (int i = 0; i < context->param_count; i++) {
+            if (context->params[i].value) {
+                free(context->params[i].value);
+            }
+        }
+        free(context->params);
+    }
+    
+    free(context);
 }
 
