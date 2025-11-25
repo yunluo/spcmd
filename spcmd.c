@@ -95,11 +95,6 @@ typedef struct {
 
 
 int main(int argc, char *argv[]) {
-  // Set console code page for UTF-8 support
-  SetConsoleOutputCP(CP_UTF8);
-  SetConsoleCP(CP_UTF8);
-  
-
   // 如果没有参数或第一个参数是帮助相关的，则显示帮助信息
   if (argc < 2 || strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "--h") == 0) {
     show_help();
@@ -120,7 +115,7 @@ void show_help() {
   printf("      `'Y8888o    888ooo88P'  888           8 Y88   P  888   888      888      \n");
   printf("          `'Y88b  888         888           8  `888'   888   888      888      \n");
   printf("     oo      d8P  888         `88b    ooo   8    Y     888   888     d88'      \n");
-  printf("     8""88888P'    o888o         `Y8bood8P'  o8o        o888o o888bood8P'        \n");
+  printf("     8\"\"88888P'    o888o         `Y8bood8P'  o8o        o888o o888bood8P'        \n");
   printf("                                                                               \n");
   printf("==========================================================================\n");
   printf("SPCMD - System Power Command Tool\n");
@@ -192,6 +187,10 @@ void handle_command(int argc, char *argv[]) {
     if (result != NULL) {
       printf("%s", result);
       free(result);
+    } else {
+      // 如果random命令返回NULL，确保有适当的输出
+      // 这可能发生在帮助请求或错误情况下
+      // cmd_random函数在这些情况下已经输出了信息，所以这里不需要额外输出
     }
   } else if (strcmp(resolved_argv[1], "logrotate") == 0) {
     cmd_logrotate(argc, resolved_argv);
@@ -3295,7 +3294,8 @@ void update_tray_icon(TrayIconData* trayData) {
   }
   
   // 进程运行时，确保托盘图标存在
-  if (trayData->nid.hWnd == NULL) {
+  // 修复：检查nid.hWnd是否有效，而不是是否为NULL
+  if (trayData->nid.hWnd == NULL || trayData->nid.hWnd != trayData->hwnd) {
     // 重新添加托盘图标
     trayData->nid.hWnd = trayData->hwnd;
     trayData->nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
@@ -3590,13 +3590,6 @@ void cmd_tray(int argc, char *argv[]) {
   // 创建托盘图标
   if (!create_tray_icon(&trayData, GetModuleHandle(NULL), title, process_name, icon_path)) {
     printf("Error: Failed to create system tray icon\n");
-    CoUninitialize();
-    return;
-  }
-  
-  // 如果进程未运行，create_tray_icon已经处理了这种情况并返回TRUE但不创建图标
-  if (!trayData.process_running) {
-    printf("Tray icon terminated.\n");
     CoUninitialize();
     return;
   }
