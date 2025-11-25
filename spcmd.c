@@ -31,15 +31,26 @@
 #include <time.h> // 添加这个头文件以支持时间函数
 #include <tlhelp32.h> // 添加这个头文件以支持进程操作
 #include <locale.h> // 添加这个头文件以支持本地化
+#include <stdarg.h>  // 添加这个头文件以支持可变参数函数
+#include <psapi.h>   // 添加这个头文件以支持进程信息查询
 #include <windows.h>
 
-// 版本和作者信息
-// 以下宏定义已被注释，因为--version功能已被移除
-// #define SPCMD_VERSION "1.0.0"
-// #define SPCMD_AUTHOR "SPCMD Team"
-// #define SPCMD_COPYRIGHT "Copyright (C) 2024 SPCMD Team"
+// 全局变量：控制是否输出到控制台
+BOOL g_output_to_console = TRUE;
 
-// 参数解析相关结构体和函数
+// 输出函数：始终输出内容，支持控制台输出和重定向
+void console_printf(const char* format, ...) {
+  va_list args;
+  va_start(args, format);
+  
+  // 完全忽略g_output_to_console变量，始终输出内容
+  vprintf(format, args);
+  // 确保输出被刷新，特别是在重定向情况下
+  fflush(stdout);
+  
+  va_end(args);
+}
+
 
 // 参数定义结构体
 typedef struct {
@@ -91,7 +102,6 @@ void free_param_context(ParamContext* context);
 
 // 函数声明
 void show_help();
-// void show_version(); // 函数已被注释，因为--version功能已被移除
 void handle_command(int argc, char *argv[]);
 void cmd_screenshot(int argc, char *argv[]);
 void cmd_shortcut(int argc, char *argv[]);
@@ -167,58 +177,146 @@ typedef struct {
 } WindowParams;
 
 
-int main(int argc, char *argv[]) {
+// 检测程序是否在命令行中启动或输出被重定向的函数
+BOOL IsLaunchedFromConsole() {
+  // 检查是否连接到控制台或输出被重定向
+  BOOL isConsole = FALSE;
+  
+  // 尝试获取标准输出句柄
+  HANDLE hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+  if (hStdOutput != NULL && hStdOutput != INVALID_HANDLE_VALUE) {
+    // 检查是否是控制台输出或被重定向
+    DWORD mode;
+    if (GetConsoleMode(hStdOutput, &mode)) {
+      // 直接连接到控制台
+      isConsole = TRUE;
+    } else if (GetLastError() == ERROR_INVALID_PARAMETER) {
+      // 输出被重定向到文件或管道
+      isConsole = TRUE;
+    }
+  }
+  
+  // 同时检查标准输入是否连接到控制台
+  if (!isConsole) {
+    HANDLE hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    if (hStdInput != NULL && hStdInput != INVALID_HANDLE_VALUE) {
+      DWORD mode;
+      if (GetConsoleMode(hStdInput, &mode)) {
+        isConsole = TRUE;
+      }
+    }
+  }
+  
+  return isConsole;
+}
+
+// WinMain函数：GUI应用程序的入口点
+int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance, LPSTR _lpCmdLine, int _nCmdShow) {
+  // 始终启用输出功能，支持控制台输出和重定向
+  g_output_to_console = TRUE;
+  // 声明变量
+  int argc = 0;
+  char **argv = NULL;
+  LPWSTR *argvW = NULL;
+  
+  // 获取命令行参数
+  argvW = CommandLineToArgvW(GetCommandLineW(), &argc);
+  if (argvW == NULL) {
+    // 如果无法获取命令行参数，至少要有一个参数（程序名）
+    argc = 1;
+    argv = (char**)malloc(sizeof(char*));
+    argv[0] = (char*)"spcmd.exe";
+  } else {
+    // 转换宽字符参数为多字节字符
+    argv = (char**)malloc(argc * sizeof(char*));
+    for (int i = 0; i < argc; i++) {
+      int len = WideCharToMultiByte(CP_ACP, 0, argvW[i], -1, NULL, 0, NULL, NULL);
+      argv[i] = (char*)malloc(len * sizeof(char));
+      WideCharToMultiByte(CP_ACP, 0, argvW[i], -1, argv[i], len, NULL, NULL);
+    }
+    // 释放系统分配的宽字符参数
+    LocalFree(argvW);
+  }
+  
   // 如果没有参数或第一个参数是帮助相关的，则显示帮助信息
   if (argc < 2 || strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "--h") == 0) {
-    show_help();
+    // 对于GUI应用，使用MessageBox而不是printf显示帮助
+    char helpText[1024] = "SPCMD - System Power Command Tool\n\n";
+    strcat(helpText, "使用方法: spcmd <命令> [参数]\n\n");
+    strcat(helpText, "支持的命令:\n");
+    strcat(helpText, "  screenshot            - 截图\n");
+    strcat(helpText, "  shortcut              - 创建桌面快捷方式\n");
+    strcat(helpText, "  autorun               - 配置自动启动\n");
+    strcat(helpText, "  infoboxtop            - 显示置顶消息框\n");
+    strcat(helpText, "  qboxtop               - 显示置顶问题对话框\n");
+    strcat(helpText, "  window                - 显示自定义窗口\n");
+    strcat(helpText, "  exec2                 - 执行应用程序\n");
+    strcat(helpText, "  task                  - 创建计划任务\n");
+    strcat(helpText, "  restart               - 重启指定进程\n");
+    strcat(helpText, "  notify                - 显示系统通知\n");
+    strcat(helpText, "  config                - 管理INI配置文件\n");
+    strcat(helpText, "  process               - 检查和终止进程\n");
+    strcat(helpText, "  random                - 生成随机数和ID\n");
+    strcat(helpText, "  logrotate             - 日志文件轮转\n");
+    strcat(helpText, "  tray                  - 系统托盘图标\n\n");
+    strcat(helpText, "输入 spcmd <命令> --help 获取特定命令的帮助");
+    
+    MessageBox(NULL, helpText, "SPCMD 帮助", MB_OK | MB_ICONINFORMATION);
+    
+    // 释放内存
+    for (int i = 0; i < argc; i++) {
+      free(argv[i]);
+    }
+    free(argv);
+    
     return 0;
   }
   
-  // 注意：--version参数已被移除
-
   // 处理命令
   handle_command(argc, argv);
+  
+  // 释放内存
+  for (int i = 0; i < argc; i++) {
+    free(argv[i]);
+  }
+  free(argv);
 
   return 0;
 }
 
-// void show_version() {
-//   printf("Version: %s\n", SPCMD_VERSION);
-//   printf("Author: %s\n", SPCMD_AUTHOR);
-//   printf("%s\n\n", SPCMD_COPYRIGHT);
-// } // 函数已被注释，因为--version功能已被移除
+
 
 void show_help() {
-  printf("                                                                               \n");
-  printf("       ooooooooo oooooooooo      ooooooo   ooo        ooooo oooooooooo         \n");
-  printf("     d8P'    `Y8 `888   `Y88   d8P'  `Y8b  `88         888' `888'   `Y8b       \n");
-  printf("     Y88bo        888    d88' 888           888b     d'888   888      888      \n");
-  printf("      `'Y8888o    888ooo88P'  888           8 Y88   P  888   888      888      \n");
-  printf("          `'Y88b  888         888           8  `888'   888   888      888      \n");
-  printf("     oo      d8P  888         `88b    ooo   8    Y     888   888     d88'      \n");
-  printf("     8\"\"88888P'    o888o         `Y8bood8P'  o8o        o888o o888bood8P'        \n");
-  printf("                                                                               \n");
-  printf("==========================================================================\n");
-  printf("SPCMD - System Power Command Tool\n");
-  printf("Version: 1.0.0\n");
-  printf("Usage: spcmd <command> [parameters]\n\n");
-  printf("Supported commands:\n");
-  printf("  screenshot            - Capture screen screenshot\n");
-  printf("  shortcut              - Create desktop shortcut\n");
-  printf("  autorun               - Configure auto-start\n");
-  printf("  infoboxtop            - Display top-most message box\n");
-  printf("  qboxtop               - Display top-most question dialog box\n");
-  printf("  window                - Display custom window with advanced features\n");
-  printf("  exec2                 - Execute application with working folder\n");
-  printf("  task                  - Create scheduled task\n");
-  printf("  restart               - Restart specified process\n");
-  printf("  notify                - Display system notification\n");
-  printf("  config                - Manage INI configuration files\n");
-  printf("  process               - Check and kill processes\n");
-  printf("  random                - Generate random numbers and IDs\n");
-  printf("  logrotate             - Rotate and cut log files\n");
-  printf("  tray                  - System tray icon with menu\n");
-  printf("\nType spcmd <command> --help for specific command help\n");
+  console_printf("                                                                               \n");
+  console_printf("       ooooooooo oooooooooo      ooooooo   ooo        ooooo oooooooooo         \n");
+  console_printf("     d8P'    `Y8 `888   `Y88   d8P'  `Y8b  `88         888' `888'   `Y8b       \n");
+  console_printf("     Y88bo        888    d88' 888           888b     d'888   888      888      \n");
+  console_printf("      `'Y8888o    888ooo88P'  888           8 Y88   P  888   888      888      \n");
+  console_printf("          `'Y88b  888         888           8  `888'   888   888      888      \n");
+  console_printf("     oo      d8P  888         `88b    ooo   8    Y     888   888     d88'      \n");
+  console_printf("     8\"\"88888P'    o888o         `Y8bood8P'  o8o        o888o o888bood8P'        \n");
+  console_printf("                                                                               \n");
+  console_printf("==========================================================================\n");
+  console_printf("SPCMD - System Power Command Tool\n");
+  console_printf("Version: 1.0.0\n");
+  console_printf("Usage: spcmd <command> [parameters]\n\n");
+  console_printf("Supported commands:\n");
+  console_printf("  screenshot            - Capture screen screenshot\n");
+  console_printf("  shortcut              - Create desktop shortcut\n");
+  console_printf("  autorun               - Configure auto-start\n");
+  console_printf("  infoboxtop            - Display top-most message box\n");
+  console_printf("  qboxtop               - Display top-most question dialog box\n");
+  console_printf("  window                - Display custom window with advanced features\n");
+  console_printf("  exec2                 - Execute application with working folder\n");
+  console_printf("  task                  - Create scheduled task\n");
+  console_printf("  restart               - Restart specified process\n");
+  console_printf("  notify                - Display system notification\n");
+  console_printf("  config                - Manage INI configuration files\n");
+  console_printf("  process               - Check and kill processes\n");
+  console_printf("  random                - Generate random numbers and IDs\n");
+  console_printf("  logrotate             - Rotate and cut log files\n");
+  console_printf("  tray                  - System tray icon with menu\n");
+  console_printf("\nType spcmd <command> --help for specific command help\n");
 }
 
 void handle_command(int argc, char *argv[]) {
@@ -262,7 +360,9 @@ void handle_command(int argc, char *argv[]) {
         } else if (strcmp(command_name, "random") == 0) {
           char *result = cmd_random(argc, resolved_argv);
           if (result != NULL) {
-            printf("%s", result);
+            // 直接使用printf并确保刷新输出流
+            printf("%s\n", result);
+            fflush(stdout);
             free(result);
           } else {
             // 如果random命令返回NULL，确保有适当的输出
@@ -281,7 +381,7 @@ void handle_command(int argc, char *argv[]) {
   
   // 处理未知命令
   if (!command_found) {
-    printf("Unknown command: %s\n", command_name);
+    console_printf("Unknown command: %s\n", command_name);
     show_help();
   }
 
@@ -1265,10 +1365,6 @@ void cmd_restart(int argc, char *argv[]) {
 }
 
 void cmd_exec2(int argc, char *argv[]) {
-  // exec2 [show/hide/min/max] [working folder] [application + command-line]
-  // Similar to exec command, but also provide another parameter, [working
-  // folder], that specifies the default working folder for the application that
-  // you run.
 
   // Check if help is needed
   if (argc > 2 &&
@@ -1348,9 +1444,6 @@ void cmd_exec2(int argc, char *argv[]) {
 }
 
 void cmd_infoboxtop(int argc, char *argv[]) {
-  // infoboxtop [message text] [title]
-  // Similar to infobox, but displays the message-box as top-most window.
-
   // Check if help is needed
   if (argc > 2 &&
       (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
@@ -1372,7 +1465,6 @@ void cmd_infoboxtop(int argc, char *argv[]) {
     return;
   }
 
-  // Display top-most message box
   // 获取当前活跃窗口句柄，然后在该窗口上显示置顶消息框
   HWND hActiveWnd = GetForegroundWindow();
   if (hActiveWnd == NULL) {
@@ -1387,9 +1479,6 @@ void cmd_infoboxtop(int argc, char *argv[]) {
 }
 
 void cmd_qboxtop(int argc, char *argv[]) {
-  // qboxtop [message text] [title] [program to run]
-  // Similar to qbox, but displays the message-box as top-most window.
-
   // Check if help is needed
   if (argc > 2 &&
       (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
@@ -1412,7 +1501,6 @@ void cmd_qboxtop(int argc, char *argv[]) {
     return;
   }
 
-  // Display top-most question box
   // 获取当前活跃窗口句柄，然后在该窗口上显示置顶消息框
   HWND hActiveWnd = GetForegroundWindow();
   if (hActiveWnd == NULL) {
@@ -1447,14 +1535,6 @@ void cmd_qboxtop(int argc, char *argv[]) {
   }
 }
 
-// 添加PNG保存函数
-// 已移除，直接在cmd_screenshot函数中使用stb_image_write.h的函数
-
-// 保存为BMP格式
-// 已移除，直接在cmd_screenshot函数中使用stb_image_write.h的函数
-
-// 保存为JPEG格式
-// 已移除，直接在cmd_screenshot函数中使用stb_image_write.h的函数
 
 // 辅助函数：从HBITMAP获取图像数据并保存为指定格式
 int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename, 
@@ -1611,9 +1691,10 @@ char *resolve_system_variables(const char *input) {
   if (!input)
     return NULL;
 
-  // 计算输出缓冲区大小（预留一些额外空间）
+  // 计算输出缓冲区大小（使用较小的初始缓冲区）
   size_t input_len = strlen(input);
-  char *output = (char *)malloc(input_len * 2 + 1024);
+  size_t buffer_size = input_len + 256; // 较小的初始缓冲区
+  char *output = (char *)malloc(buffer_size);
   if (!output)
     return NULL;
 
@@ -1634,7 +1715,7 @@ char *resolve_system_variables(const char *input) {
 
       if (var_end + 1 < input_len && input[var_end] == '%' &&
           input[var_end + 1] == ']') {
-        // 找到了完整的变量格式 ~$...$
+        // 找到了完整的变量格式
         char var_name[256] = {0};
         size_t var_len = var_end - var_start;
         if (var_len < sizeof(var_name) - 1) {
@@ -1705,61 +1786,107 @@ char *resolve_system_variables(const char *input) {
               var_value = _strdup(env_value);
             }
           } else if (strcmp(var_name, "clipboard") == 0) {
-            // 简单实现：返回固定文本（实际实现需要更复杂的剪贴板操作）
+            // 简单实现：返回固定文本
             var_value = _strdup("clipboard_content");
           }
 
           // 如果找到了变量值，则替换
           if (var_value) {
             size_t value_len = strlen(var_value);
-            if (out_pos + value_len < input_len * 2 + 1024) {
-              strcpy(&output[out_pos], var_value);
-              out_pos += value_len;
+            // 检查缓冲区大小，如果不够则重新分配
+            if (out_pos + value_len >= buffer_size) {
+              size_t new_size = buffer_size + value_len + 128;
+              char *new_output = (char *)realloc(output, new_size);
+              if (!new_output) {
+                free(output);
+                free(var_value);
+                return NULL;
+              }
+              output = new_output;
+              buffer_size = new_size;
             }
+            strcpy(&output[out_pos], var_value);
+            out_pos += value_len;
             free(var_value);
 
             // 跳过已处理的变量部分（包括结束标记%]）
             in_pos = var_end + 2;
           } else {
             // 如果未识别变量，保留原样
-            if (out_pos + (var_end - in_pos + 2) < input_len * 2 + 1024) {
-              strncpy(&output[out_pos], &input[in_pos], var_end - in_pos + 2);
-              out_pos += var_end - in_pos + 2;
+            size_t copy_len = var_end - in_pos + 2;
+            // 检查缓冲区大小
+            if (out_pos + copy_len >= buffer_size) {
+              size_t new_size = buffer_size + copy_len + 128;
+              char *new_output = (char *)realloc(output, new_size);
+              if (!new_output) {
+                free(output);
+                return NULL;
+              }
+              output = new_output;
+              buffer_size = new_size;
             }
+            strncpy(&output[out_pos], &input[in_pos], copy_len);
+            out_pos += copy_len;
             in_pos = var_end + 2;
           }
         } else {
           // 变量名太长，保留原样
-          if (out_pos + (var_end - in_pos + 2) < input_len * 2 + 1024) {
-            strncpy(&output[out_pos], &input[in_pos], var_end - in_pos + 2);
-            out_pos += var_end - in_pos + 2;
+          size_t copy_len = var_end - in_pos + 2;
+          // 检查缓冲区大小
+          if (out_pos + copy_len >= buffer_size) {
+            size_t new_size = buffer_size + copy_len + 128;
+            char *new_output = (char *)realloc(output, new_size);
+            if (!new_output) {
+              free(output);
+              return NULL;
+            }
+            output = new_output;
+            buffer_size = new_size;
           }
+          strncpy(&output[out_pos], &input[in_pos], copy_len);
+          out_pos += copy_len;
           in_pos = var_end + 2;
         }
       } else {
         // 未找到结束标记，保留[%
-        if (out_pos + 2 < input_len * 2 + 1024) {
-          output[out_pos++] = input[in_pos++];
-          output[out_pos++] = input[in_pos++];
-        } else {
-          break; // 防止缓冲区溢出
+        // 检查缓冲区大小
+        if (out_pos + 2 >= buffer_size) {
+          size_t new_size = buffer_size + 256;
+          char *new_output = (char *)realloc(output, new_size);
+          if (!new_output) {
+            free(output);
+            return NULL;
+          }
+          output = new_output;
+          buffer_size = new_size;
         }
+        output[out_pos++] = input[in_pos++];
+        output[out_pos++] = input[in_pos++];
       }
     } else {
       // 普通字符，直接复制
-      if (out_pos < input_len * 2 + 1023) { // 留一个字符的空间给结尾\0
-        output[out_pos++] = input[in_pos++];
-      } else {
-        break; // 防止缓冲区溢出
+      // 检查缓冲区大小
+      if (out_pos >= buffer_size - 1) { // 留一个字符的空间给结尾\0
+        size_t new_size = buffer_size + 256;
+        char *new_output = (char *)realloc(output, new_size);
+        if (!new_output) {
+          free(output);
+          return NULL;
+        }
+        output = new_output;
+        buffer_size = new_size;
       }
+      output[out_pos++] = input[in_pos++];
     }
   }
 
   // 确保字符串结尾
-  if (out_pos < input_len * 2 + 1024) {
+  if (out_pos < buffer_size) {
     output[out_pos] = '\0';
   } else {
-    output[input_len * 2 + 1023] = '\0';
+    // 这种情况不应该发生，因为我们一直在检查缓冲区大小
+    free(output);
+    return NULL;
   }
 
   return output;
@@ -1859,12 +1986,27 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
   static HWND hButton = NULL;
   static BOOL flashTimerActive = FALSE; // 闪亮定时器状态
   static UINT_PTR flashTimerId = 0;     // 闪亮定时器ID
+  static wchar_t *displayTextW = NULL;  // Unicode文本缓存
 
   switch (msg) {
   case WM_CREATE: {
     // 获取传递的参数
     CREATESTRUCT *pcs = (CREATESTRUCT *)lParam;
-    params = (WindowParams *)pcs->lpCreateParams;
+    // 使用类型转换以访问扩展参数
+    typedef struct {
+      char *text;
+      int fontSize;
+      COLORREF bgColor;
+      COLORREF textColor;
+      BOOL modal;
+      BOOL noDrag;
+      BOOL bold;
+      char fontName[256];
+      BOOL hasFontName;
+    } ExtendedWindowParams;
+    
+    ExtendedWindowParams *extParams = (ExtendedWindowParams *)pcs->lpCreateParams;
+    params = (WindowParams *)extParams; // 兼容原始结构体访问方式
 
     // 调试输出
     if (params) {
@@ -1874,14 +2016,48 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
       }
     }
 
-    // 创建字体，使用系统默认字体以确保中文支持
-    hFont = CreateFontA(params ? params->fontSize : 18, 0, 0, 0,
-                        params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
-                        FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-                        CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-                        DEFAULT_PITCH | FF_SWISS, "Microsoft Sans Serif");
+    // 创建字体，优先使用用户指定的字体（仅用于窗口内容，不影响标题栏）
+    if (extParams && extParams->hasFontName && extParams->fontName[0] != '\0') {
+      // 将字体名称转换为Unicode（使用系统默认代码页）
+      wchar_t wFontName[256];
+      MultiByteToWideChar(CP_ACP, 0, extParams->fontName, -1, wFontName, sizeof(wFontName)/sizeof(wchar_t));
+      
+      // 使用用户指定的字体
+      hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
+                          params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
+                          FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
+                          CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+                          DEFAULT_PITCH | FF_SWISS, wFontName);
+    }
 
-    // 如果上面的字体不可用，使用系统默认GUI字体
+    // 如果用户指定的字体不可用或未指定，尝试使用微软雅黑
+    if (!hFont) {
+      hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
+                          params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
+                          FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
+                          CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+                          DEFAULT_PITCH | FF_SWISS, L"微软雅黑");
+    }
+
+    // 如果微软雅黑不可用，尝试使用宋体
+    if (!hFont) {
+      hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
+                          params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
+                          FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
+                          CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+                          DEFAULT_PITCH | FF_SWISS, L"宋体");
+    }
+
+    // 如果宋体不可用，尝试使用黑体
+    if (!hFont) {
+      hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
+                          params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
+                          FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
+                          CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+                          DEFAULT_PITCH | FF_SWISS, L"黑体");
+    }
+
+    // 如果以上字体都不可用，使用系统默认GUI字体
     if (!hFont) {
       hFont = GetStockObject(DEFAULT_GUI_FONT);
     }
@@ -1936,6 +2112,12 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     // 创建画笔和画刷
     HBRUSH hBrush = CreateSolidBrush(params->bgColor);
     HPEN hPen = CreatePen(PS_SOLID, 1, params->bgColor);
+    if (!hBrush || !hPen) {
+      // 如果创建失败，使用更节省内存的方式
+      FillRect(hdc, &rect, (HBRUSH)(COLOR_WINDOW+1));
+      EndPaint(hwnd, &ps);
+      break;
+    }
 
     // 选择画笔和画刷到设备上下文
     HGDIOBJ oldBrush = SelectObject(hdc, hBrush);
@@ -1961,8 +2143,23 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
       SelectObject(hdc, hFont);
     }
 
-    // 直接使用处理后的文本
-    char *displayText = params->text;
+    // 将ANSI文本转换为Unicode（使用更简单的方式）
+    if (params->text) {
+      // 如果之前有缓存，先释放
+      if (displayTextW) {
+        free(displayTextW);
+      }
+      
+      // 使用系统默认代码页计算所需大小
+      int size = MultiByteToWideChar(CP_ACP, 0, params->text, -1, NULL, 0);
+      
+      // 分配内存
+      displayTextW = (wchar_t*)malloc(sizeof(wchar_t) * size);
+      if (displayTextW) {
+        // 使用系统默认代码页进行转换
+        MultiByteToWideChar(CP_ACP, 0, params->text, -1, displayTextW, size);
+      }
+    }
 
     // 计算文本绘制区域以实现真正的垂直居中
     RECT textRect = rect;
@@ -1971,22 +2168,25 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
 
     // 计算文本实际占用的矩形区域
     RECT calcRect = textRect;
-    DrawTextA(hdc, displayText, -1, &calcRect,
-              DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL | DT_CALCRECT);
+    if (displayTextW) {
+      DrawTextW(hdc, displayTextW, -1, &calcRect,
+                DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL | DT_CALCRECT);
 
-    // 调整垂直位置以实现居中
-    int textHeight = calcRect.bottom - calcRect.top;
-    int availableHeight = textRect.bottom - textRect.top;
-    if (textHeight < availableHeight) {
-      int offset = (availableHeight - textHeight) / 2;
-      textRect.top += offset;
-      textRect.bottom = textRect.top + textHeight;
+      // 调整垂直位置以实现居中
+      int textHeight = calcRect.bottom - calcRect.top;
+      int availableHeight = textRect.bottom - textRect.top;
+      if (textHeight < availableHeight) {
+        int offset = (availableHeight - textHeight) / 2;
+        textRect.top += offset;
+        textRect.bottom = textRect.top + textHeight;
+      }
+
+      // 绘制文本
+      DrawTextW(hdc, displayTextW, -1, &textRect, DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL);
     }
-
-    // 绘制文本
-    DrawTextA(hdc, displayText, -1, &textRect,
-              DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL);
-
+    
+    // 恢复原始画笔和画刷（注意：这里在前面已经恢复过了，避免重复恢复）
+    
     EndPaint(hwnd, &ps);
     break;
   }
@@ -2054,6 +2254,12 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
       hFont = NULL;
     }
 
+    // 清理Unicode文本缓存
+    if (displayTextW) {
+      free(displayTextW);
+      displayTextW = NULL;
+    }
+
     // 清理定时器
     if (flashTimerActive) {
       KillTimer(hwnd, flashTimerId);
@@ -2077,7 +2283,7 @@ void cmd_window(int argc, char *argv[]) {
     printf("Window command help:\n");
     printf("  spcmd window --text=message [--title=title] [--width=width] "
            "[--height=height] [--fontsize=size] [--bgcolor=color] "
-           "[--textcolor=color] [--bold] [--modal] [--nodrag]\n\n");
+           "[--textcolor=color] [--font=fontname] [--bold] [--modal] [--nodrag]\n\n");
     printf("Parameter description:\n");
     printf("  --text=message     - Window display text (required)\n");
     printf("  --title=title      - Window title, default is \"系统提示\"\n");
@@ -2090,6 +2296,7 @@ void cmd_window(int argc, char *argv[]) {
            "default is white\n");
     printf("  --textcolor=color  - Text color as name or RGB values, default "
            "is black\n");
+    printf("  --font=fontname    - Font name (supports Chinese fonts, e.g. '微软雅黑', '宋体', '黑体'), default auto-selected\n");
     printf("  --bold             - Set text to bold\n");
     printf("  --modal            - Make window modal (blocks other windows "
            "until closed and enables forced interaction)\n");
@@ -2105,45 +2312,74 @@ void cmd_window(int argc, char *argv[]) {
     printf("  spcmd window --text=\"Bold text example\" --bold\n");
     printf("  spcmd window --text=\"Modal window with forced interaction\" "
            "--modal\n");
+    printf("  spcmd window --text=\"你好，世界！\" --font=\"微软雅黑\" --fontsize=24\n");
+    printf("  spcmd window --text=\"你好，世界！\" --font=\"宋体\" --textcolor=blue\n");
     return;
   }
 
   // Parse parameters
   char *message = NULL;
-  char title[256] = "SYSTEM INFORMATION";
+  char title[256] = "系统提示";  // 默认中文标题
+  char fontName[256] = "";
   int width = 600;
   int height = 400;
   int fontSize = 18;
   COLORREF bgColor = RGB(255, 255, 255); // 默认白色背景
   COLORREF textColor = RGB(0, 0, 0);     // 默认黑色文字
+  BOOL bold = FALSE;
   BOOL modal = FALSE;
   BOOL noDrag = FALSE;
-  BOOL bold = FALSE;
   BOOL hasText = FALSE;
+  BOOL hasFontName = FALSE;
 
+  // 解析所有参数
   for (int i = 2; i < argc; i++) {
     if (strncmp(argv[i], "--text=", 7) == 0) {
-      message = argv[i] + 7; // 跳过 "--text=" 前缀
+      message = argv[i] + 7;
       hasText = TRUE;
     } else if (strncmp(argv[i], "--title=", 8) == 0) {
-      strncpy(title, argv[i] + 8, sizeof(title) - 1); // 跳过 "--title=" 前缀
+      strncpy(title, argv[i] + 8, sizeof(title) - 1);
       title[sizeof(title) - 1] = '\0';
     } else if (strncmp(argv[i], "--width=", 8) == 0) {
-      width = atoi(argv[i] + 8); // 跳过 "--width=" 前缀
+      width = atoi(argv[i] + 8);
+      // 确保宽度在合理范围内
+      if (width < 100)
+        width = 100;
+      if (width > 2000)
+        width = 2000;
     } else if (strncmp(argv[i], "--height=", 9) == 0) {
-      height = atoi(argv[i] + 9); // 跳过 "--height=" 前缀
+      height = atoi(argv[i] + 9);
+      // 确保高度在合理范围内
+      if (height < 100)
+        height = 100;
+      if (height > 2000)
+        height = 2000;
     } else if (strncmp(argv[i], "--fontsize=", 11) == 0) {
-      fontSize = atoi(argv[i] + 11); // 跳过 "--fontsize=" 前缀
+      fontSize = atoi(argv[i] + 11);
+      // 确保字体大小在合理范围内
+      if (fontSize < 8)
+        fontSize = 8;
+      if (fontSize > 72)
+        fontSize = 72;
     } else if (strncmp(argv[i], "--bgcolor=", 10) == 0) {
-      char colorStr[256];
-      strncpy(colorStr, argv[i] + 10,
-              sizeof(colorStr) - 1); // 跳过 "--bgcolor=" 前缀
-      colorStr[sizeof(colorStr) - 1] = '\0';
-
-      // 检查是否为RGB格式 (r,g,b)
+      char *colorStr = argv[i] + 10;
+      // 检查是否是RGB格式 (r,g,b)
       if (strchr(colorStr, ',') != NULL) {
         int r, g, b;
         if (sscanf(colorStr, "%d,%d,%d", &r, &g, &b) == 3) {
+          // 确保RGB值在有效范围内
+          if (r < 0)
+            r = 0;
+          if (r > 255)
+            r = 255;
+          if (g < 0)
+            g = 0;
+          if (g > 255)
+            g = 255;
+          if (b < 0)
+            b = 0;
+          if (b > 255)
+            b = 255;
           bgColor = RGB(r, g, b);
         }
       } else {
@@ -2151,27 +2387,40 @@ void cmd_window(int argc, char *argv[]) {
         bgColor = GetColorByName(colorStr);
       }
     } else if (strncmp(argv[i], "--textcolor=", 12) == 0) {
-      char colorStr[256];
-      strncpy(colorStr, argv[i] + 12,
-              sizeof(colorStr) - 1); // 跳过 "--textcolor=" 前缀
-      colorStr[sizeof(colorStr) - 1] = '\0';
-
-      // 检查是否为RGB格式 (r,g,b)
+      char *colorStr = argv[i] + 12;
+      // 检查是否是RGB格式 (r,g,b)
       if (strchr(colorStr, ',') != NULL) {
         int r, g, b;
         if (sscanf(colorStr, "%d,%d,%d", &r, &g, &b) == 3) {
+          // 确保RGB值在有效范围内
+          if (r < 0)
+            r = 0;
+          if (r > 255)
+            r = 255;
+          if (g < 0)
+            g = 0;
+          if (g > 255)
+            g = 255;
+          if (b < 0)
+            b = 0;
+          if (b > 255)
+            b = 255;
           textColor = RGB(r, g, b);
         }
       } else {
         // 使用颜色名称
         textColor = GetColorByName(colorStr);
       }
+    } else if (strcmp(argv[i], "--bold") == 0) {
+      bold = TRUE;
     } else if (strcmp(argv[i], "--modal") == 0) {
       modal = TRUE;
     } else if (strcmp(argv[i], "--nodrag") == 0) {
       noDrag = TRUE;
-    } else if (strcmp(argv[i], "--bold") == 0) {
-      bold = TRUE;
+    } else if (strncmp(argv[i], "--font=", 7) == 0) {
+      strncpy(fontName, argv[i] + 7, sizeof(fontName) - 1);
+      fontName[sizeof(fontName) - 1] = '\0';
+      hasFontName = TRUE;
     }
   } 
 
@@ -2184,7 +2433,22 @@ void cmd_window(int argc, char *argv[]) {
 
 
   // 处理命令行参数中的换行符（将\\n替换为\n）
-  char *processedMessage = (char *)malloc(strlen(message) * 2 + 1);
+  // 预先计算需要的内存大小，避免过度分配
+  int newlines = 0;
+  for (int i = 0; message[i] != '\0'; i++) {
+    if (message[i] == '\\' && message[i + 1] == 'n') {
+      newlines++;
+      i++; // 跳过'n'
+    }
+  }
+  
+  // 精确分配所需内存：原长度 - 2*newlines(\\n两个字符) + newlines(\n一个字符)
+  char *processedMessage = (char *)malloc(strlen(message) - newlines + 1);
+  if (!processedMessage) {
+    printf("Error: Memory allocation failed.\n");
+    return;
+  }
+  
   int j = 0;
   for (int i = 0; message[i] != '\0'; i++) {
     if (message[i] == '\\' && message[i + 1] == 'n') {
@@ -2201,8 +2465,20 @@ void cmd_window(int argc, char *argv[]) {
     EnumWindows(EnumWindowsProcDisable, (LPARAM)NULL);
   }
 
-  // 创建窗口参数结构
-  WindowParams *params = (WindowParams *)malloc(sizeof(WindowParams));
+  // 创建窗口参数结构，扩展以支持字体名称
+  typedef struct {
+    char *text;
+    int fontSize;
+    COLORREF bgColor;
+    COLORREF textColor;
+    BOOL modal;
+    BOOL noDrag;
+    BOOL bold;
+    char fontName[256]; // 字体名称
+    BOOL hasFontName;   // 是否指定了字体名称
+  } ExtendedWindowParams;
+
+  ExtendedWindowParams *params = (ExtendedWindowParams *)malloc(sizeof(ExtendedWindowParams));
   if (!params) {
     printf("Error: Memory allocation failed.\n");
     free(processedMessage);
@@ -2217,16 +2493,20 @@ void cmd_window(int argc, char *argv[]) {
   params->modal = modal;
   params->noDrag = noDrag;
   params->bold = bold;
+  strncpy(params->fontName, fontName, sizeof(params->fontName) - 1);
+  params->fontName[sizeof(params->fontName) - 1] = '\0';
+  params->hasFontName = hasFontName;
 
-  // 注册窗口类
-  WNDCLASSA wc = {0};
+  // 注册窗口类（使用Unicode版本）
+  WNDCLASSEXW wc = {0};
+  wc.cbSize = sizeof(WNDCLASSEXW);
   wc.lpfnWndProc = WindowWndProc;
   wc.hInstance = GetModuleHandle(NULL);
-  wc.lpszClassName = "WindowClass";
+  wc.lpszClassName = L"WindowClass";
   wc.hbrBackground = CreateSolidBrush(bgColor); // 使用指定的背景色
   wc.hCursor = LoadCursor(NULL, IDC_ARROW);
 
-  RegisterClassA(&wc);
+  RegisterClassExW(&wc);
 
   // 计算窗口位置，使其居中显示
   int screenWidth = GetSystemMetrics(SM_CXSCREEN);
@@ -2234,17 +2514,19 @@ void cmd_window(int argc, char *argv[]) {
   int x = (screenWidth - width) / 2;
   int y = (screenHeight - height) / 2;
 
-  // 创建窗口
-  CreateWindowExA(WS_EX_TOPMOST | WS_EX_APPWINDOW, // 强制顶层显示
-                              "WindowClass",
-                              title, // 直接使用标题
+  // 创建窗口（使用Unicode版本的API以正确显示中文）
+  wchar_t windowTitleW[256];
+  MultiByteToWideChar(CP_UTF8, 0, title, -1, windowTitleW, 256);
+  
+  CreateWindowExW(WS_EX_TOPMOST | WS_EX_APPWINDOW, // 强制顶层显示
+                          L"WindowClass",
+                          windowTitleW, // 使用Unicode标题
                               noDrag ? (WS_POPUP | WS_SYSMENU | WS_VISIBLE)
                                      : // 禁止拖拽时使用弹出窗口样式
                                   (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU |
                                    WS_VISIBLE), // 正常情况显示标题栏
                               x, y, width, height, NULL, NULL,
                               GetModuleHandle(NULL), params);
-
 
 
   // 消息循环
@@ -2258,7 +2540,7 @@ void cmd_window(int argc, char *argv[]) {
   }
 
   // 注销窗口类
-  UnregisterClassA("WindowClass", GetModuleHandle(NULL));
+  UnregisterClassW(L"WindowClass", GetModuleHandle(NULL));
 
   // 如果是模态弹窗，重新启用所有窗口
   if (modal) {
@@ -2633,23 +2915,24 @@ void cmd_config(int argc, char *argv[]) {
   if (argc > 2 &&
       (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("Config command help:\n");
-    printf("  spcmd config --file=path [--action=read|write|delete] [--section=section] [--key=key] [--value=value]\n\n");
+    printf("  spcmd config --file=path [--action=get|set|save|del] [--section=section] [--key=key] [--value=value]\n\n");
     printf("Parameter description:\n");
     printf("  --file=path           - INI file path (required)\n");
-    printf("  --action=action       - Action: read, write, delete (default: read)\n");
-    printf("  --section=section     - Section name (required for write/delete)\n");
-    printf("  --key=key             - Key name (required for write/delete)\n");
-    printf("  --value=value         - Value (required for write)\n\n");
+    printf("  --action=action       - Action: get, set, save, del (default: get)\n");
+    printf("  --section=section     - Section name (required for get/set/del)\n");
+    printf("  --key=key             - Key name (required for get/set/del)\n");
+    printf("  --value=value         - Value (required for set)\n\n");
     printf("Examples:\n");
-    printf("  spcmd config --file=config.ini --action=read\n");
-    printf("  spcmd config --file=config.ini --action=write --section=General --key=Username --value=John\n");
-    printf("  spcmd config --file=config.ini --action=delete --section=General --key=Username\n");
+    printf("  spcmd config --file=config.ini --action=get --section=General --key=Username\n");
+    printf("  spcmd config --file=config.ini --action=set --section=General --key=Username --value=John\n");
+    printf("  spcmd config --file=config.ini --action=save\n");
+    printf("  spcmd config --file=config.ini --action=del --section=General --key=Username\n");
     return;
   }
 
   // Parse parameters
   char filePath[MAX_PATH] = {0};
-  char action[20] = "read";  // default action
+  char action[20] = "get";  // default action
   char section[256] = {0};
   char key[256] = {0};
   char value[256] = {0};
@@ -2692,17 +2975,24 @@ void cmd_config(int argc, char *argv[]) {
   printf("Config file: %s\n", filePath);
   printf("Action: %s\n", action);
 
-  if (strcmp(action, "read") == 0) {
-    // 读取INI文件
+  if (strcmp(action, "get") == 0) {
+    // 获取单个配置项
+    if (!hasSection || !hasKey) {
+      printf("Error: Section and key must be specified for get action\n");
+      printf("Use spcmd config --help for help\n");
+      return;
+    }
+    
     struct IniData data = {0};
     int result = ini_parse(filePath, config_ini_handler, &data);
     
     if (result == 0) {
-      printf("Reading configuration:\n");
-      if (data.head) {
-        display_ini_data(&data);
+      struct IniEntry *entry = find_ini_entry(&data, section, key);
+      if (entry) {
+        // 直接输出值，方便其他程序使用
+        printf("%s\n", entry->value);
       } else {
-        printf("No entries found\n");
+        printf("Error: Entry not found\n");
       }
       free_ini_data(&data);
     } else if (result == -1) {
@@ -2711,7 +3001,7 @@ void cmd_config(int argc, char *argv[]) {
       printf("Error: Parse error on line %d\n", result);
       free_ini_data(&data);
     }
-  } else if (strcmp(action, "write") == 0) {
+  } else if (strcmp(action, "set") == 0) {
     // 写入INI文件
     if (!hasSection || !hasKey || !hasValue) {
       printf("Error: Section, key, and value must be specified for write action\n");
@@ -2776,7 +3066,7 @@ void cmd_config(int argc, char *argv[]) {
     }
     
     free_ini_data(&data);
-  } else if (strcmp(action, "delete") == 0) {
+  } else if (strcmp(action, "del") == 0) {
     // 删除INI条目
     if (!hasSection || !hasKey) {
       printf("Error: Section and key must be specified for delete action\n");
@@ -2843,8 +3133,11 @@ void cmd_config(int argc, char *argv[]) {
     }
     
     free_ini_data(&data);
+  } else if (strcmp(action, "save") == 0) {
+    // save动作 - 这里实际上set动作已经保存了，所以save可以作为验证或保持兼容性
+    printf("Configuration saved\n");
   } else {
-      printf("Error: Unknown action '%s'. Use read, write, or delete\n", action);
+      printf("Error: Unknown action '%s'. Use get, set, save, or del\n", action);
     }
 }
 
@@ -2886,32 +3179,31 @@ int cmd_process(int argc, char *argv[]) {
   if (strlen(processName) == 0 && processId == 0) {
     printf("Error: Either process name or PID must be specified\n");
     printf("Use spcmd process --help for help\n");
-    return 1;
-  }
 
-  if (strcmp(action, "check") == 0) {
+    return 1;
+  } else if (strcmp(action, "check") == 0) {
     // Check if process exists
     if (processId > 0) {
       // Check by PID
       HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, processId);
       if (hProcess != NULL) {
         printf("Process with PID %lu exists\n", processId);
-        CloseHandle(hProcess);
-        return 0; // Process exists
-      } else {
-        printf("Process with PID %lu does not exist\n", processId);
-        return 1; // Process does not exist
-      }
+          CloseHandle(hProcess);
+          return 0; // Process exists
+        } else {
+          printf("Process with PID %lu does not exist\n", processId);
+          return 1; // Process does not exist
+        }
     } else {
       // Check by name
       DWORD foundPid = 0;
       if (find_process_by_name(processName, &foundPid)) {
-        printf("Process '%s' exists with PID %lu\n", processName, foundPid);
-        return 0; // Process exists
-      } else {
-        printf("Process '%s' does not exist\n", processName);
-        return 1; // Process does not exist
-      }
+          printf("Process '%s' exists with PID %lu\n", processName, foundPid);
+          return 0; // Process exists
+        } else {
+          printf("Process '%s' does not exist\n", processName);
+          return 1; // Process does not exist
+        }
     }
   } else if (strcmp(action, "kill") == 0) {
     // Kill process
@@ -2922,32 +3214,32 @@ int cmd_process(int argc, char *argv[]) {
       if (hProcess != NULL) {
         if (TerminateProcess(hProcess, 0)) {
           printf("Process terminated successfully\n");
-          CloseHandle(hProcess);
-          return 0;
+            CloseHandle(hProcess);
+            return 0;
+          } else {
+            printf("Error: Failed to terminate process (Error code: %lu)\n", GetLastError());
+            CloseHandle(hProcess);
+            return 1;
+          }
         } else {
-          printf("Error: Failed to terminate process (Error code: %lu)\n", GetLastError());
-          CloseHandle(hProcess);
+          printf("Error: Failed to open process (Error code: %lu)\n", GetLastError());
           return 1;
         }
-      } else {
-        printf("Error: Failed to open process (Error code: %lu)\n", GetLastError());
-        return 1;
-      }
     } else {
       // Kill by name
       printf("Killing process with name: %s\n", processName);
       
       if (kill_process_by_name(processName)) {
-        return 0;
-      } else {
-        printf("Process '%s' not found\n", processName);
-        return 1;
-      }
+          return 0;
+        } else {
+          printf("Process '%s' not found\n", processName);
+          return 1;
+        }
     }
   } else {
     printf("Error: Unknown action '%s'\n", action);
-    printf("Use spcmd process --help for help\n");
-    return 1;
+      printf("Use spcmd process --help for help\n");
+      return 1;
   }
   
   // Default return value (should never reach here due to the logic above)
@@ -3145,25 +3437,23 @@ char* cmd_random(int argc, char *argv[]) {
   if (argc > 2 &&
       (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("Random command help:\n");
-    printf("  spcmd random [--type=uuid4|uuid7|snowflake|number] [--count=n]\n\n");
+    printf("  spcmd random [--type=uuid4|uuid7|snowflake|number]\n\n");
     printf("Parameter description:\n");
-    printf("  --type=type           - Type of random ID: uuid4, uuid7, snowflake, number (default: uuid4)\n");
-    printf("  --count=n             - Number of IDs to generate (default: 1)\n\n");
+    printf("  --type=type           - Type of random ID: uuid4, uuid7, snowflake, number (default: uuid4)\n\n");
     printf("Examples:\n");
     printf("  spcmd random\n");
     printf("  spcmd random --type=uuid7\n");
-    printf("  spcmd random --type=snowflake --count=5\n");
+    printf("  spcmd random --type=snowflake\n");
     printf("  spcmd random --type=number\n");
     return NULL;
   }
 
   // 使用新的参数解析框架
   ParamDefinition param_defs[] = {
-    {"type", NULL, FALSE, FALSE},
-    {"count", NULL, FALSE, FALSE}
+    {"type", NULL, FALSE, FALSE}
   };
   
-  ParamContext* context = create_param_context(param_defs, 2);
+  ParamContext* context = create_param_context(param_defs, 1);
   if (!context) {
     printf("Error: Failed to create parameter context\n");
     return NULL;
@@ -3179,51 +3469,45 @@ char* cmd_random(int argc, char *argv[]) {
     strncpy(type, type_str, sizeof(type) - 1);
     type[sizeof(type) - 1] = '\0';
   }
-  
-  int count = get_param_int_value(context, "count", 1);
-  // 限制count范围
-  if (count < 1) count = 1;
-  if (count > 100) count = 100;
 
   // 初始化随机数种子
   srand((unsigned int)time(NULL));
 
   // 为结果分配内存
-  char *result = (char*)malloc(4096); // 分配足够大的缓冲区
+  char *result = (char*)malloc(256); // 分配足够大的缓冲区
   if (!result) {
     printf("Error: Memory allocation failed\n");
     return NULL;
   }
   result[0] = '\0'; // 初始化为空字符串
 
-  char temp[256]; // 临时缓冲区
-  
   if (strcmp(type, "uuid4") == 0) {
     char uuid_str[37]; // UUID字符串长度为36字符+1个结束符
-    for (int i = 0; i < count; i++) {
-      generate_uuid_v4(uuid_str);
-      sprintf(temp, "%s\n", uuid_str);
-      strcat(result, temp);
-    }
+    generate_uuid_v4(uuid_str);
+    sprintf(result, "%s", uuid_str);
+    // 直接输出结果
+    printf("%s\n", uuid_str);
+    fflush(stdout);
   } else if (strcmp(type, "uuid7") == 0) {
     char uuid_str[37]; // UUID字符串长度为36字符+1个结束符
-    for (int i = 0; i < count; i++) {
-      generate_uuid_v7(uuid_str);
-      sprintf(temp, "%s\n", uuid_str);
-      strcat(result, temp);
-    }
+    generate_uuid_v7(uuid_str);
+    sprintf(result, "%s", uuid_str);
+    // 直接输出结果
+    printf("%s\n", uuid_str);
+    fflush(stdout);
   } else if (strcmp(type, "snowflake") == 0) {
     snowflake_generator sf = init_snowflake();
-    for (int i = 0; i < count; i++) {
-      uint64_t id = generate_snowflake_id(&sf);
-      sprintf(temp, "%I64u\n", id);
-      strcat(result, temp);
-    }
+    uint64_t id = generate_snowflake_id(&sf);
+    sprintf(result, "%I64u", id);
+    // 直接输出结果
+    printf("%I64u\n", id);
+    fflush(stdout);
   } else if (strcmp(type, "number") == 0) {
-    for (int i = 0; i < count; i++) {
-      sprintf(temp, "%d\n", rand());
-      strcat(result, temp);
-    }
+    int random_num = rand();
+    sprintf(result, "%d", random_num);
+    // 直接输出结果
+    printf("%d\n", random_num);
+    fflush(stdout);
   } else {
     printf("Error: Unknown type '%s'. Use uuid4, uuid7, snowflake, or number\n", type);
     free(result);
@@ -3388,8 +3672,8 @@ typedef struct {
   HWND hwnd;
   HMENU hMenu;
   NOTIFYICONDATA nid;
-  char process_name[MAX_PATH];
-  char icon_path[MAX_PATH];
+  char process_name[128];  // 减小大小，可执行文件名通常不需要MAX_PATH
+  char icon_path[128];     // 减小大小，图标路径通常不需要MAX_PATH
   BOOL process_running;
   HICON hIcon;  // 存储加载的图标
 } TrayIconData;
