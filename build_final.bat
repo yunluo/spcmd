@@ -116,4 +116,4 @@ if exist spcmd.res (
 
 REM All operations completed successfully
 echo All operations completed successfully!
-exit /b 0
+pause

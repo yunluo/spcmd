@@ -239,6 +239,7 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance, LPSTR _lpCmdL
   
   // 如果没有参数，直接返回
   if (argc < 2) {
+    MessageBoxA(NULL, "SPCMD - System Power Command Tool\n\nUsage: spcmd.exe [command] [options]", "INFO", MB_OK | MB_ICONINFORMATION);
     // 释放内存
     for (int i = 0; i < argc; i++) {
       free(argv[i]);
@@ -275,6 +276,15 @@ void handle_command(int argc, char *argv[]) {
     resolved_argv[i] = resolve_system_variables(argv[i]);
     if (!resolved_argv[i]) {
       resolved_argv[i] = _strdup(argv[i]);
+      if (!resolved_argv[i]) {
+        // 内存分配失败，释放之前分配的内存并返回
+        for (int j = 0; j < i; j++) {
+          free(resolved_argv[j]);
+        }
+        free(resolved_argv);
+        printf("Error: Memory allocation failed\n");
+        return;
+      }
     }
   }
 
@@ -291,13 +301,7 @@ void handle_command(int argc, char *argv[]) {
         if (strcmp(command_name, "process") == 0) {
           int result = cmd_process(argc, resolved_argv);
           if (result != 0) {
-            // 释放资源后再退出
-            for (int j = 0; j < argc; j++) {
-              if (resolved_argv[j]) {
-                free(resolved_argv[j]);
-              }
-            }
-            free(resolved_argv);
+            // 注意：在调用exit之前手动释放内存实际上是不必要的
             exit(result); // 如果check命令返回非0值，退出程序
           }
         } else if (strcmp(command_name, "random") == 0) {
@@ -431,9 +435,16 @@ void cmd_screenshot(int argc, char *argv[]) {
 
     HANDLE hDIB = GlobalAlloc(GHND, dwBmpSize);
     char *lpbitmap = (char *)GlobalLock(hDIB);
-
-    GetDIBits(hScreenDC, hBitmap, 0, (UINT)bmp.bmHeight, lpbitmap,
+    
+    // 检查GetDIBits的返回值
+    int getDIBitsResult = GetDIBits(hScreenDC, hBitmap, 0, (UINT)bmp.bmHeight, lpbitmap,
               (BITMAPINFO *)&bi, DIB_RGB_COLORS);
+    if (getDIBitsResult == 0 || getDIBitsResult == GDI_ERROR) {
+      printf("Error: Failed to get DIB bits\n");
+      GlobalUnlock(hDIB);
+      GlobalFree(hDIB);
+      // 继续执行后续操作而不是直接返回
+    }
 
     // Save as base64 encoded data to file
     save_as_base64_data(lpbitmap, dwBmpSize, base64_filename);
@@ -472,10 +483,16 @@ void cmd_screenshot(int argc, char *argv[]) {
           }
         }
         CloseHandle(hFile);
+      } else {
+        // 临时文件创建失败
+        printf("Error: Failed to create temporary file %s\n", temp_filename);
       }
       
       // Delete the temporary file
       DeleteFile(temp_filename);
+    } else {
+      // save_bitmap_as_format失败
+      printf("Error: Failed to save bitmap as format\n");
     }
   }
   else {
@@ -602,6 +619,7 @@ void cmd_shortcut(int argc, char *argv[]) {
     char *fileName = strrchr(targetPath, '\\');
     if (fileName != NULL) {
       strncpy(shortcutName, fileName + 1, MAX_PATH - 1);
+      shortcutName[MAX_PATH - 1] = '\0';
     } else {
       strncpy(shortcutName, targetPath, MAX_PATH - 1);
     }
@@ -622,6 +640,7 @@ void cmd_shortcut(int argc, char *argv[]) {
   if (FAILED(SHGetFolderPathA(NULL, CSIDL_DESKTOPDIRECTORY, NULL,
                               SHGFP_TYPE_CURRENT, desktopPath))) {
     printf("Error: Unable to get desktop path\n");
+    CoUninitialize();
     return;
   }
 
@@ -647,6 +666,7 @@ void cmd_shortcut(int argc, char *argv[]) {
       // Use target file directory as working directory
       char targetDir[MAX_PATH];
       strncpy(targetDir, targetPath, MAX_PATH - 1);
+      targetDir[MAX_PATH - 1] = '\0';
       char *lastSlash = strrchr(targetDir, '\\');
       if (lastSlash != NULL) {
         *lastSlash = '\0';
@@ -685,6 +705,8 @@ void cmd_shortcut(int argc, char *argv[]) {
       }
 
       IPersistFile_Release(pPersistFile);
+    } else {
+      printf("Error: Unable to get IPersistFile interface\n");
     }
 
     IShellLinkA_Release(pShellLink);
@@ -741,8 +763,10 @@ void cmd_autorun(int argc, char *argv[]) {
     char *fileName = strrchr(targetPath, '\\');
     if (fileName != NULL) {
       strncpy(entryName, fileName + 1, MAX_PATH - 1);
+      entryName[MAX_PATH - 1] = '\0';
     } else {
       strncpy(entryName, targetPath, MAX_PATH - 1);
+      entryName[MAX_PATH - 1] = '\0';
     }
 
     // Remove extension
@@ -883,6 +907,7 @@ void cmd_autorun(int argc, char *argv[]) {
         // Use target file directory as working directory
         char targetDir[MAX_PATH];
         strncpy(targetDir, targetPath, MAX_PATH - 1);
+        targetDir[MAX_PATH - 1] = '\0';
         char *lastSlash = strrchr(targetDir, '\\');
         if (lastSlash != NULL) {
           *lastSlash = '\0';
@@ -1153,7 +1178,11 @@ void cmd_restart(int argc, char *argv[]) {
     if (Process32First(hSnapshot, &pe32)) {
       do {
         // Compare process name (without extension) with our target
-        char *procName = pe32.szExeFile;
+        // 创建进程名的副本以避免修改原始数据
+        char procName[MAX_PATH];
+        strncpy(procName, pe32.szExeFile, MAX_PATH - 1);
+        procName[MAX_PATH - 1] = '\0';
+        
         char *procDot = strrchr(procName, '.');
         if (procDot != NULL) {
           *procDot = '\0';
@@ -1188,7 +1217,41 @@ void cmd_restart(int argc, char *argv[]) {
   }
 
   // Wait a bit for processes to terminate
-  Sleep(1000);
+  // 增加等待时间并检查进程是否完全终止
+  Sleep(2000);
+  
+  // 可选：再次检查进程是否已终止
+  HANDLE hSnapshot2 = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (hSnapshot2 != INVALID_HANDLE_VALUE) {
+    PROCESSENTRY32 pe32_2;
+    pe32_2.dwSize = sizeof(PROCESSENTRY32);
+    
+    BOOL processStillRunning = FALSE;
+    if (Process32First(hSnapshot2, &pe32_2)) {
+      do {
+        // 创建进程名的副本以避免修改原始数据
+        char procName2[MAX_PATH];
+        strncpy(procName2, pe32_2.szExeFile, MAX_PATH - 1);
+        procName2[MAX_PATH - 1] = '\0';
+        
+        char *procDot2 = strrchr(procName2, '.');
+        if (procDot2 != NULL) {
+          *procDot2 = '\0';
+        }
+
+        if (_stricmp(procName2, processName) == 0) {
+          processStillRunning = TRUE;
+          break;
+        }
+      } while (Process32Next(hSnapshot2, &pe32_2));
+    }
+    CloseHandle(hSnapshot2);
+    
+    // 如果进程仍在运行，再等待一段时间
+    if (processStillRunning) {
+      Sleep(1000);
+    }
+  }
 
   // Now start the new process
   STARTUPINFOA si = {0};
@@ -1201,16 +1264,32 @@ void cmd_restart(int argc, char *argv[]) {
   char processDir[MAX_PATH] = {0};
   
   if (hasWorkDir) {
-    effectiveWorkDir = workingDir;
-  } else {
+    // 检查指定的工作目录是否存在
+    if (GetFileAttributesA(workingDir) != INVALID_FILE_ATTRIBUTES) {
+      effectiveWorkDir = workingDir;
+    } else {
+      printf("Warning: Specified working directory does not exist: %s\n", workingDir);
+    }
+  } 
+  
+  // 如果没有有效的工作目录，使用进程所在目录
+  if (effectiveWorkDir == NULL) {
     // 获取进程文件所在目录
     strncpy(processDir, processPath, MAX_PATH - 1);
     processDir[MAX_PATH - 1] = '\0';
     char* lastSlash = strrchr(processDir, '\\');
     if (lastSlash != NULL) {
       *lastSlash = '\0';
-      effectiveWorkDir = processDir;
+      // 检查进程目录是否存在
+      if (GetFileAttributesA(processDir) != INVALID_FILE_ATTRIBUTES) {
+        effectiveWorkDir = processDir;
+      }
     }
+  }
+  
+  // 如果仍然没有有效的工作目录，CreateProcessA将使用默认工作目录
+  if (effectiveWorkDir == NULL) {
+    printf("Warning: No valid working directory found, using system default\n");
   }
   
   // Create the process
@@ -1402,16 +1481,37 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
 
   HANDLE hDIB = GlobalAlloc(GHND, dwBmpSize);
   char *lpbitmap = (char *)GlobalLock(hDIB);
-
-  GetDIBits(hMemoryDC ? hMemoryDC : hScreenDC, hBitmapToSave, 0, (UINT)height, lpbitmap,
+  
+  // 检查GetDIBits的返回值
+  int getDIBitsResult = GetDIBits(hMemoryDC ? hMemoryDC : hScreenDC, hBitmapToSave, 0, (UINT)height, lpbitmap,
             (BITMAPINFO *)&bi, DIB_RGB_COLORS);
+  
+  // 检查GetDIBits的返回值
+  if (getDIBitsResult == 0 || getDIBitsResult == GDI_ERROR) {
+    printf("Error: Failed to get DIB bits in save_bitmap_as_format\n");
+    // 清理资源并返回错误
+    GlobalUnlock(hDIB);
+    GlobalFree(hDIB);
+    
+    if (hScaledBitmap) {
+      SelectObject(hMemoryDC, hOldBitmap);
+      DeleteObject(hScaledBitmap);
+      DeleteDC(hMemoryDC);
+    }
+    
+    return 0; // 返回错误
+  }
 
   // 调整RGB顺序以修复颜色发黄问题
-  for (int i = 0; i < width * height * 3; i += 3) {
-    // 交换红色和蓝色通道 (BGR -> RGB)
-    char temp = lpbitmap[i];
-    lpbitmap[i] = lpbitmap[i + 2];
-    lpbitmap[i + 2] = temp;
+  // 确保不会越界访问
+  DWORD pixelCount = width * height;
+  if (pixelCount > 0 && lpbitmap != NULL) {
+    for (DWORD i = 0; i < pixelCount * 3 && i + 2 < dwBmpSize; i += 3) {
+      // 交换红色和蓝色通道 (BGR -> RGB)
+      char temp = lpbitmap[i];
+      lpbitmap[i] = lpbitmap[i + 2];
+      lpbitmap[i + 2] = temp;
+    }
   }
 
   // 使用stb_image_write保存为指定格式
@@ -1836,14 +1936,15 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     if (extParams && extParams->hasFontName && extParams->fontName[0] != '\0') {
       // 将字体名称转换为Unicode（使用系统默认代码页）
       wchar_t wFontName[256];
-      MultiByteToWideChar(CP_ACP, 0, extParams->fontName, -1, wFontName, sizeof(wFontName)/sizeof(wchar_t));
-      
-      // 使用用户指定的字体
-      hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
-                          params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
-                          FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
-                          CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-                          DEFAULT_PITCH | FF_SWISS, wFontName);
+      int fontNameLen = MultiByteToWideChar(CP_ACP, 0, extParams->fontName, -1, wFontName, sizeof(wFontName)/sizeof(wchar_t));
+      if (fontNameLen > 0) {
+        // 使用用户指定的字体
+        hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
+                            params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
+                            FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
+                            CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+                            DEFAULT_PITCH | FF_SWISS, wFontName);
+      }
     }
 
     // 如果用户指定的字体不可用或未指定，尝试使用微软雅黑
@@ -1964,16 +2065,28 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
       // 如果之前有缓存，先释放
       if (displayTextW) {
         free(displayTextW);
+        displayTextW = NULL;
       }
       
       // 使用系统默认代码页计算所需大小
       int size = MultiByteToWideChar(CP_ACP, 0, params->text, -1, NULL, 0);
       
-      // 分配内存
-      displayTextW = (wchar_t*)malloc(sizeof(wchar_t) * size);
-      if (displayTextW) {
-        // 使用系统默认代码页进行转换
-        MultiByteToWideChar(CP_ACP, 0, params->text, -1, displayTextW, size);
+      // 检查MultiByteToWideChar是否成功
+      if (size > 0) {
+        // 分配内存
+        displayTextW = (wchar_t*)malloc(sizeof(wchar_t) * size);
+        if (displayTextW) {
+          // 使用系统默认代码页进行转换
+          int result = MultiByteToWideChar(CP_ACP, 0, params->text, -1, displayTextW, size);
+          if (result == 0) {
+            // 转换失败，释放内存
+            free(displayTextW);
+            displayTextW = NULL;
+          }
+        }
+      } else {
+        // MultiByteToWideChar失败
+        printf("Warning: Failed to calculate Unicode buffer size. Error code: %lu\n", GetLastError());
       }
     }
 
@@ -2283,7 +2396,13 @@ void cmd_window(int argc, char *argv[]) {
   wc.hbrBackground = CreateSolidBrush(bgColor); // 使用指定的背景色
   wc.hCursor = LoadCursor(NULL, IDC_ARROW);
 
-  RegisterClassExW(&wc);
+  // 检查窗口类注册是否成功
+  if (!RegisterClassExW(&wc)) {
+    printf("Error: Failed to register window class. Error code: %lu\n", GetLastError());
+    free(params);
+    free(processedMessage);
+    return;
+  }
 
   // 计算窗口位置，使其居中显示
   int screenWidth = GetSystemMetrics(SM_CXSCREEN);
@@ -2293,9 +2412,17 @@ void cmd_window(int argc, char *argv[]) {
 
   // 创建窗口（使用Unicode版本的API以正确显示中文）
   wchar_t windowTitleW[256];
-  MultiByteToWideChar(CP_UTF8, 0, title, -1, windowTitleW, 256);
+  int titleLen = MultiByteToWideChar(CP_UTF8, 0, title, -1, windowTitleW, 256);
+  if (titleLen == 0) {
+    printf("Error: Failed to convert window title to Unicode. Error code: %lu\n", GetLastError());
+    // 注销窗口类
+    UnregisterClassW(L"WindowClass", GetModuleHandle(NULL));
+    free(params);
+    free(processedMessage);
+    return;
+  }
   
-  CreateWindowExW(WS_EX_TOPMOST | WS_EX_APPWINDOW, // 强制顶层显示
+  HWND hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_APPWINDOW, // 强制顶层显示
                           L"WindowClass",
                           windowTitleW, // 使用Unicode标题
                               noDrag ? (WS_POPUP | WS_SYSMENU | WS_VISIBLE)
@@ -2304,6 +2431,16 @@ void cmd_window(int argc, char *argv[]) {
                                    WS_VISIBLE), // 正常情况显示标题栏
                               x, y, width, height, NULL, NULL,
                               GetModuleHandle(NULL), params);
+  
+  // 检查窗口创建是否成功
+  if (!hwnd) {
+    printf("Error: Failed to create window. Error code: %lu\n", GetLastError());
+    // 注销窗口类
+    UnregisterClassW(L"WindowClass", GetModuleHandle(NULL));
+    free(params);
+    free(processedMessage);
+    return;
+  }
 
 
   // 消息循环
