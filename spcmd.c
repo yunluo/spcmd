@@ -1903,28 +1903,12 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
   static HWND hButton = NULL;
   static BOOL flashTimerActive = FALSE; // 闪亮定时器状态
   static UINT_PTR flashTimerId = 0;     // 闪亮定时器ID
-  static wchar_t *displayTextW = NULL;  // Unicode文本缓存
 
   switch (msg) {
   case WM_CREATE: {
     // 获取传递的参数
     CREATESTRUCT *pcs = (CREATESTRUCT *)lParam;
-    // 使用类型转换以访问扩展参数
-    typedef struct {
-      char *text;
-      int fontSize;
-      COLORREF bgColor;
-      COLORREF textColor;
-      BOOL modal;
-      BOOL noDrag;
-      BOOL bold;
-      char fontName[256];
-      BOOL hasFontName;
-    } ExtendedWindowParams;
-
-    ExtendedWindowParams *extParams =
-        (ExtendedWindowParams *)pcs->lpCreateParams;
-    params = (WindowParams *)extParams; // 兼容原始结构体访问方式
+    params = (WindowParams *)pcs->lpCreateParams;
 
     // 调试输出
     if (params) {
@@ -1934,48 +1918,33 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
       }
     }
 
-    // 创建字体，优先使用用户指定的字体（仅用于窗口内容，不影响标题栏）
-    if (extParams && extParams->hasFontName && extParams->fontName[0] != '\0') {
-      // 将字体名称转换为Unicode（使用系统默认代码页）
-      wchar_t wFontName[256];
-      int fontNameLen =
-          MultiByteToWideChar(CP_ACP, 0, extParams->fontName, -1, wFontName,
-                              sizeof(wFontName) / sizeof(wchar_t));
-      if (fontNameLen > 0) {
-        // 使用用户指定的字体
-        hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
-                            params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
-                            FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
-                            CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-                            DEFAULT_PITCH | FF_SWISS, wFontName);
-      }
-    }
+
 
     // 如果用户指定的字体不可用或未指定，尝试使用微软雅黑
     if (!hFont) {
-      hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
+      hFont = CreateFontA(params ? params->fontSize : 18, 0, 0, 0,
                           params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
                           FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
                           CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-                          DEFAULT_PITCH | FF_SWISS, L"微软雅黑");
+                          DEFAULT_PITCH | FF_SWISS, "微软雅黑");
     }
 
     // 如果微软雅黑不可用，尝试使用宋体
     if (!hFont) {
-      hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
+      hFont = CreateFontA(params ? params->fontSize : 18, 0, 0, 0,
                           params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
                           FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
                           CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-                          DEFAULT_PITCH | FF_SWISS, L"宋体");
+                          DEFAULT_PITCH | FF_SWISS, "宋体");
     }
 
     // 如果宋体不可用，尝试使用黑体
     if (!hFont) {
-      hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
+      hFont = CreateFontA(params ? params->fontSize : 18, 0, 0, 0,
                           params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
                           FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
                           CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-                          DEFAULT_PITCH | FF_SWISS, L"黑体");
+                          DEFAULT_PITCH | FF_SWISS, "黑体");
     }
 
     // 如果以上字体都不可用，使用系统默认GUI字体
@@ -2033,12 +2002,7 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     // 创建画笔和画刷
     HBRUSH hBrush = CreateSolidBrush(params->bgColor);
     HPEN hPen = CreatePen(PS_SOLID, 1, params->bgColor);
-    if (!hBrush || !hPen) {
-      // 如果创建失败，使用更节省内存的方式
-      FillRect(hdc, &rect, (HBRUSH)(COLOR_WINDOW + 1));
-      EndPaint(hwnd, &ps);
-      break;
-    }
+
 
     // 选择画笔和画刷到设备上下文
     HGDIOBJ oldBrush = SelectObject(hdc, hBrush);
@@ -2064,38 +2028,8 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
       SelectObject(hdc, hFont);
     }
 
-    // 将ANSI文本转换为Unicode（使用更简单的方式）
-    if (params->text) {
-      // 如果之前有缓存，先释放
-      if (displayTextW) {
-        free(displayTextW);
-        displayTextW = NULL;
-      }
-
-      // 使用系统默认代码页计算所需大小
-      int size = MultiByteToWideChar(CP_ACP, 0, params->text, -1, NULL, 0);
-
-      // 检查MultiByteToWideChar是否成功
-      if (size > 0) {
-        // 分配内存
-        displayTextW = (wchar_t *)malloc(sizeof(wchar_t) * size);
-        if (displayTextW) {
-          // 使用系统默认代码页进行转换
-          int result = MultiByteToWideChar(CP_ACP, 0, params->text, -1,
-                                           displayTextW, size);
-          if (result == 0) {
-            // 转换失败，释放内存
-            free(displayTextW);
-            displayTextW = NULL;
-          }
-        }
-      } else {
-        // MultiByteToWideChar失败
-        printf("Warning: Failed to calculate Unicode buffer size. Error code: "
-               "%lu\n",
-               GetLastError());
-      }
-    }
+    // 直接使用处理后的文本
+    char *displayText = params->text;
 
     // 计算文本绘制区域以实现真正的垂直居中
     RECT textRect = rect;
@@ -2104,25 +2038,21 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
 
     // 计算文本实际占用的矩形区域
     RECT calcRect = textRect;
-    if (displayTextW) {
-      DrawTextW(hdc, displayTextW, -1, &calcRect,
-                DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL | DT_CALCRECT);
+    DrawTextA(hdc, displayText, -1, &calcRect,
+              DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL | DT_CALCRECT);
 
-      // 调整垂直位置以实现居中
-      int textHeight = calcRect.bottom - calcRect.top;
-      int availableHeight = textRect.bottom - textRect.top;
-      if (textHeight < availableHeight) {
-        int offset = (availableHeight - textHeight) / 2;
-        textRect.top += offset;
-        textRect.bottom = textRect.top + textHeight;
-      }
-
-      // 绘制文本
-      DrawTextW(hdc, displayTextW, -1, &textRect,
-                DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL);
+    // 调整垂直位置以实现居中
+    int textHeight = calcRect.bottom - calcRect.top;
+    int availableHeight = textRect.bottom - textRect.top;
+    if (textHeight < availableHeight) {
+      int offset = (availableHeight - textHeight) / 2;
+      textRect.top += offset;
+      textRect.bottom = textRect.top + textHeight;
     }
 
-    // 恢复原始画笔和画刷（注意：这里在前面已经恢复过了，避免重复恢复）
+    // 绘制文本
+    DrawTextA(hdc, displayText, -1, &textRect,
+              DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL);
 
     EndPaint(hwnd, &ps);
     break;
@@ -2191,11 +2121,7 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
       hFont = NULL;
     }
 
-    // 清理Unicode文本缓存
-    if (displayTextW) {
-      free(displayTextW);
-      displayTextW = NULL;
-    }
+
 
     // 清理定时器
     if (flashTimerActive) {
@@ -2217,18 +2143,16 @@ void cmd_window(int argc, char *argv[]) {
 
   // Parse parameters
   char *message = NULL;
-  char title[256] = "系统提示"; // 默认中文标题
-  char fontName[256] = "";
+  char title[256] = "SYSTEM INFORMATION";
   int width = 600;
   int height = 400;
   int fontSize = 18;
   COLORREF bgColor = RGB(255, 255, 255); // 默认白色背景
   COLORREF textColor = RGB(0, 0, 0);     // 默认黑色文字
-  BOOL bold = FALSE;
   BOOL modal = FALSE;
   BOOL noDrag = FALSE;
+  BOOL bold = FALSE;
   BOOL hasText = FALSE;
-  BOOL hasFontName = FALSE;
 
   // 解析所有参数
   for (int i = 2; i < argc; i++) {
@@ -2315,37 +2239,17 @@ void cmd_window(int argc, char *argv[]) {
       modal = TRUE;
     } else if (strcmp(argv[i], "--nodrag") == 0) {
       noDrag = TRUE;
-    } else if (strncmp(argv[i], "--font=", 7) == 0) {
-      strncpy(fontName, argv[i] + 7, sizeof(fontName) - 1);
-      fontName[sizeof(fontName) - 1] = '\0';
-      hasFontName = TRUE;
     }
   }
 
   // Check if required parameters are provided
   if (!hasText) {
     printf("Error: Text parameter is required.\n");
-
     return;
   }
 
   // 处理命令行参数中的换行符（将\\n替换为\n）
-  // 预先计算需要的内存大小，避免过度分配
-  int newlines = 0;
-  for (int i = 0; message[i] != '\0'; i++) {
-    if (message[i] == '\\' && message[i + 1] == 'n') {
-      newlines++;
-      i++; // 跳过'n'
-    }
-  }
-
-  // 精确分配所需内存：原长度 - 2*newlines(\\n两个字符) + newlines(\n一个字符)
-  char *processedMessage = (char *)malloc(strlen(message) - newlines + 1);
-  if (!processedMessage) {
-    printf("Error: Memory allocation failed.\n");
-    return;
-  }
-
+  char *processedMessage = (char *)malloc(strlen(message) * 2 + 1);
   int j = 0;
   for (int i = 0; message[i] != '\0'; i++) {
     if (message[i] == '\\' && message[i + 1] == 'n') {
@@ -2362,21 +2266,8 @@ void cmd_window(int argc, char *argv[]) {
     EnumWindows(EnumWindowsProcDisable, (LPARAM)NULL);
   }
 
-  // 创建窗口参数结构，扩展以支持字体名称
-  typedef struct {
-    char *text;
-    int fontSize;
-    COLORREF bgColor;
-    COLORREF textColor;
-    BOOL modal;
-    BOOL noDrag;
-    BOOL bold;
-    char fontName[256]; // 字体名称
-    BOOL hasFontName;   // 是否指定了字体名称
-  } ExtendedWindowParams;
-
-  ExtendedWindowParams *params =
-      (ExtendedWindowParams *)malloc(sizeof(ExtendedWindowParams));
+  // 创建窗口参数结构
+  WindowParams *params = (WindowParams *)malloc(sizeof(WindowParams));
   if (!params) {
     printf("Error: Memory allocation failed.\n");
     free(processedMessage);
@@ -2391,27 +2282,16 @@ void cmd_window(int argc, char *argv[]) {
   params->modal = modal;
   params->noDrag = noDrag;
   params->bold = bold;
-  strncpy(params->fontName, fontName, sizeof(params->fontName) - 1);
-  params->fontName[sizeof(params->fontName) - 1] = '\0';
-  params->hasFontName = hasFontName;
 
-  // 注册窗口类（使用Unicode版本）
-  WNDCLASSEXW wc = {0};
-  wc.cbSize = sizeof(WNDCLASSEXW);
+  // 注册窗口类
+  WNDCLASSA wc = {0};
   wc.lpfnWndProc = WindowWndProc;
   wc.hInstance = GetModuleHandle(NULL);
-  wc.lpszClassName = L"WindowClass";
+  wc.lpszClassName = "WindowClass";
   wc.hbrBackground = CreateSolidBrush(bgColor); // 使用指定的背景色
   wc.hCursor = LoadCursor(NULL, IDC_ARROW);
 
-  // 检查窗口类注册是否成功
-  if (!RegisterClassExW(&wc)) {
-    printf("Error: Failed to register window class. Error code: %lu\n",
-           GetLastError());
-    free(params);
-    free(processedMessage);
-    return;
-  }
+  RegisterClassA(&wc);
 
   // 计算窗口位置，使其居中显示
   int screenWidth = GetSystemMetrics(SM_CXSCREEN);
@@ -2419,39 +2299,16 @@ void cmd_window(int argc, char *argv[]) {
   int x = (screenWidth - width) / 2;
   int y = (screenHeight - height) / 2;
 
-  // 创建窗口（使用Unicode版本的API以正确显示中文）
-  wchar_t windowTitleW[256];
-  int titleLen = MultiByteToWideChar(CP_UTF8, 0, title, -1, windowTitleW, 256);
-  if (titleLen == 0) {
-    printf(
-        "Error: Failed to convert window title to Unicode. Error code: %lu\n",
-        GetLastError());
-    // 注销窗口类
-    UnregisterClassW(L"WindowClass", GetModuleHandle(NULL));
-    free(params);
-    free(processedMessage);
-    return;
-  }
-
-  HWND hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_APPWINDOW, // 强制顶层显示
-                              L"WindowClass",
-                              windowTitleW, // 使用Unicode标题
+  // 创建窗口
+  HWND hwnd = CreateWindowExA(WS_EX_TOPMOST | WS_EX_APPWINDOW, // 强制顶层显示
+                              "WindowClass",
+                              title, // 直接使用标题
                               noDrag ? (WS_POPUP | WS_SYSMENU | WS_VISIBLE)
                                      : // 禁止拖拽时使用弹出窗口样式
                                   (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU |
                                    WS_VISIBLE), // 正常情况显示标题栏
                               x, y, width, height, NULL, NULL,
                               GetModuleHandle(NULL), params);
-
-  // 检查窗口创建是否成功
-  if (!hwnd) {
-    printf("Error: Failed to create window. Error code: %lu\n", GetLastError());
-    // 注销窗口类
-    UnregisterClassW(L"WindowClass", GetModuleHandle(NULL));
-    free(params);
-    free(processedMessage);
-    return;
-  }
 
   // 消息循环
   MSG msg;
@@ -2464,7 +2321,7 @@ void cmd_window(int argc, char *argv[]) {
   }
 
   // 注销窗口类
-  UnregisterClassW(L"WindowClass", GetModuleHandle(NULL));
+  UnregisterClassA("WindowClass", GetModuleHandle(NULL));
 
   // 如果是模态弹窗，重新启用所有窗口
   if (modal) {
