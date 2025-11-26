@@ -40,16 +40,15 @@ spcmd <command> [parameters]
 
 #### 屏幕截图
 ```bash
-spcmd screenshot [--save=path|base64] [--fullscreen] [--format=png|bmp|jpg] [--base64=file] [--quality=value]
+spcmd screenshot [--save=path|base64] [--format=png|bmp|jpg] [--base64=file] [--quality=value]
 ```
 
 参数说明:
 - `--save=path` - 保存截图到指定路径，默认保存到当前目录
 - `--save=base64` - 将截图以Base64编码文本输出到控制台
-- `--fullscreen` - 捕获全屏（默认）
 - `--format=png|jpg|bmp` - 保存格式，默认为bmp
 - `--base64=file` - 保存为Base64编码数据到指定文件
-- `--quality=value` - PNG图片质量（1-100），默认为100
+- `--quality=value` - 图片质量（1-100），默认为100
 
 示例:
 ```bash
@@ -118,7 +117,7 @@ spcmd qboxtop "Do you want to run the calculator?" "Question" "calc.exe"
 
 #### 自定义窗口
 ```bash
-spcmd window --text=message [--title=title] [--width=width] [--height=height] [--fontsize=size] [--bgcolor=color] [--textcolor=color] [--font=fontname] [--bold] [--modal] [--nodrag]
+spcmd window --text=message [--title=title] [--width=width] [--height=height] [--fontsize=size] [--bgcolor=color] [--textcolor=color] [--bold] [--modal] [--nodrag]
 ```
 
 参数说明:
@@ -129,7 +128,6 @@ spcmd window --text=message [--title=title] [--width=width] [--height=height] [-
 - `--fontsize=size` - 字体大小，默认为18
 - `--bgcolor=color` - 背景颜色，可以是颜色名称（white,black,red,green,blue,yellow,cyan,magenta,gray,orange,purple,pink,lightblue,lightgreen,lightgray）或RGB值（r,g,b），默认为白色
 - `--textcolor=color` - 文字颜色，可以是颜色名称或RGB值，默认为黑色
-- `--font=fontname` - 字体名称（支持中文字体，如'微软雅黑', '宋体', '黑体'），默认自动选择
 - `--bold` - 设置文本为粗体
 - `--modal` - 设置窗口为模态窗口（阻塞其他窗口直到关闭并启用强制交互）
 - `--nodrag` - 禁止窗口拖拽
@@ -142,8 +140,8 @@ spcmd window --text="Red background window" --bgcolor=red --fontsize=20
 spcmd window --text="Blue text on yellow background" --bgcolor=yellow --textcolor=blue
 spcmd window --text="Bold text example" --bold
 spcmd window --text="Modal window with forced interaction" --modal
-spcmd window --text="你好，世界！" --font="微软雅黑" --fontsize=24
-spcmd window --text="你好，世界！" --font="宋体" --textcolor=blue
+spcmd window --text="你好，世界！" --fontsize=24
+spcmd window --text="你好，世界！" --textcolor=blue
 ```
 
 #### 程序执行
@@ -293,11 +291,13 @@ spcmd tray --process=process_name [--title=title] [--icon=icon_path]
 - `--process=process_name` - 要监控的进程名称（必需）
 - `--title=title` - 托盘图标标题
 - `--icon=icon_path` - 图标文件路径
+- `--path=process_path` - 进程路径（可自动检测进程名和图标）
 
 示例:
 ```bash
 spcmd tray --process=notepad.exe
 spcmd tray --process=myapp.exe --title="My Application" --icon="C:\MyApp\icon.ico"
+spcmd tray --path="C:\MyApp\myapp.exe"
 ```
 
 ## 示例

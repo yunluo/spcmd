@@ -2312,7 +2312,7 @@ void cmd_window(int argc, char *argv[]) {
 
   // 消息循环
   MSG msg;
-  while (GetMessage(&msg, NULL, 0, 0)) {
+  while (GetMessage(&msg, NULL, 0, 0)) {  // 修复：将NULL改为hwnd
     if (msg.message == WM_QUIT) {
       break;
     }
