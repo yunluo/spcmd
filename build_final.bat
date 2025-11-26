@@ -57,8 +57,9 @@ if exist spcmd.rc (
     )
 )
 
-REM Main compilation command with or without resources
-gcc-xp -Wall -Wextra -std=c99 -m32 -Os -D_WIN32_WINNT=0x0501 -DWINVER=0x0501 -D_WIN32_IE=0x0500 -s -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-ident -fdata-sections -ffunction-sections -Wl,--gc-sections -Wl,--strip-all spcmd.c ini.c %RESOBJ% -o spcmd.exe -lgdi32 -luser32 -lshell32 -lole32 -lshlwapi
+REM Main compilation command with or without resources - Optimized for Windows XP compatibility
+REM Using -mwindows flag to create GUI application without console window
+gcc-xp -Wall -Wextra -std=c99 -m32 -mwindows -Os -D_WIN32_WINNT=0x0501 -DWINVER=0x0501 -D_WIN32_IE=0x0500 -s -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-ident -fdata-sections -ffunction-sections -Wl,--gc-sections -Wl,--strip-all spcmd.c ini.c %RESOBJ% -o spcmd.exe -lgdi32 -luser32 -lshell32 -lole32 -lshlwapi
 
 REM Check if compilation was successful
 if %errorlevel% neq 0 (
@@ -94,14 +95,18 @@ if exist spcmd.exe (
     echo Warning: Executable file not found
 )
 
-copy spcmd.exe D:\VM\VM_PATH\ >nul 2>&1
+REM Optional: Copy executable to VM directory if it exists
+if exist "D:\VM\VM_PATH\" (
+    copy spcmd.exe D:\VM\VM_PATH\ >nul 2>&1
+    echo Copied executable to VM directory
+) else (
+    echo VM directory not found, skipping copy
+)
 echo.
 
 REM Ask if user wants to run functionality test
 echo.
 
-echo Running functionality test...
-call test.bat
 
 REM Clean up temporary resource file
 if exist spcmd.res (

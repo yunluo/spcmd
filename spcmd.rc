@@ -19,7 +19,7 @@ BEGIN
         BLOCK "040904b0" // 美国英语，Unicode
         BEGIN
             VALUE "CompanyName", "SPCMD Team"
-            VALUE "FileDescription", "System Power Command Tool"
+            VALUE "FileDescription", "SPCMD"
             VALUE "FileVersion", "1.0.0.0"
             VALUE "InternalName", "spcmd"
             VALUE "LegalCopyright", "Copyright (C) 2025 Pein"

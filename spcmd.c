@@ -101,7 +101,6 @@ void free_param_context(ParamContext* context);
 #endif
 
 // 函数声明
-void show_help();
 void handle_command(int argc, char *argv[]);
 void cmd_screenshot(int argc, char *argv[]);
 void cmd_shortcut(int argc, char *argv[]);
@@ -238,31 +237,8 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance, LPSTR _lpCmdL
     LocalFree(argvW);
   }
   
-  // 如果没有参数或第一个参数是帮助相关的，则显示帮助信息
-  if (argc < 2 || strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "--h") == 0) {
-    // 对于GUI应用，使用MessageBox而不是printf显示帮助
-    char helpText[1024] = "SPCMD - System Power Command Tool\n\n";
-    strcat(helpText, "使用方法: spcmd <命令> [参数]\n\n");
-    strcat(helpText, "支持的命令:\n");
-    strcat(helpText, "  screenshot            - 截图\n");
-    strcat(helpText, "  shortcut              - 创建桌面快捷方式\n");
-    strcat(helpText, "  autorun               - 配置自动启动\n");
-    strcat(helpText, "  infoboxtop            - 显示置顶消息框\n");
-    strcat(helpText, "  qboxtop               - 显示置顶问题对话框\n");
-    strcat(helpText, "  window                - 显示自定义窗口\n");
-    strcat(helpText, "  exec2                 - 执行应用程序\n");
-    strcat(helpText, "  task                  - 创建计划任务\n");
-    strcat(helpText, "  restart               - 重启指定进程\n");
-    strcat(helpText, "  notify                - 显示系统通知\n");
-    strcat(helpText, "  config                - 管理INI配置文件\n");
-    strcat(helpText, "  process               - 检查和终止进程\n");
-    strcat(helpText, "  random                - 生成随机数和ID\n");
-    strcat(helpText, "  logrotate             - 日志文件轮转\n");
-    strcat(helpText, "  tray                  - 系统托盘图标\n\n");
-    strcat(helpText, "输入 spcmd <命令> --help 获取特定命令的帮助");
-    
-    MessageBox(NULL, helpText, "SPCMD 帮助", MB_OK | MB_ICONINFORMATION);
-    
+  // 如果没有参数，直接返回
+  if (argc < 2) {
     // 释放内存
     for (int i = 0; i < argc; i++) {
       free(argv[i]);
@@ -285,39 +261,6 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance, LPSTR _lpCmdL
 }
 
 
-
-void show_help() {
-  console_printf("                                                                               \n");
-  console_printf("       ooooooooo oooooooooo      ooooooo   ooo        ooooo oooooooooo         \n");
-  console_printf("     d8P'    `Y8 `888   `Y88   d8P'  `Y8b  `88         888' `888'   `Y8b       \n");
-  console_printf("     Y88bo        888    d88' 888           888b     d'888   888      888      \n");
-  console_printf("      `'Y8888o    888ooo88P'  888           8 Y88   P  888   888      888      \n");
-  console_printf("          `'Y88b  888         888           8  `888'   888   888      888      \n");
-  console_printf("     oo      d8P  888         `88b    ooo   8    Y     888   888     d88'      \n");
-  console_printf("     8\"\"88888P'    o888o         `Y8bood8P'  o8o        o888o o888bood8P'        \n");
-  console_printf("                                                                               \n");
-  console_printf("==========================================================================\n");
-  console_printf("SPCMD - System Power Command Tool\n");
-  console_printf("Version: 1.0.0\n");
-  console_printf("Usage: spcmd <command> [parameters]\n\n");
-  console_printf("Supported commands:\n");
-  console_printf("  screenshot            - Capture screen screenshot\n");
-  console_printf("  shortcut              - Create desktop shortcut\n");
-  console_printf("  autorun               - Configure auto-start\n");
-  console_printf("  infoboxtop            - Display top-most message box\n");
-  console_printf("  qboxtop               - Display top-most question dialog box\n");
-  console_printf("  window                - Display custom window with advanced features\n");
-  console_printf("  exec2                 - Execute application with working folder\n");
-  console_printf("  task                  - Create scheduled task\n");
-  console_printf("  restart               - Restart specified process\n");
-  console_printf("  notify                - Display system notification\n");
-  console_printf("  config                - Manage INI configuration files\n");
-  console_printf("  process               - Check and kill processes\n");
-  console_printf("  random                - Generate random numbers and IDs\n");
-  console_printf("  logrotate             - Rotate and cut log files\n");
-  console_printf("  tray                  - System tray icon with menu\n");
-  console_printf("\nType spcmd <command> --help for specific command help\n");
-}
 
 void handle_command(int argc, char *argv[]) {
   // 创建解析后的参数数组
@@ -382,7 +325,6 @@ void handle_command(int argc, char *argv[]) {
   // 处理未知命令
   if (!command_found) {
     console_printf("Unknown command: %s\n", command_name);
-    show_help();
   }
 
   // 释放解析后的参数数组
@@ -395,33 +337,6 @@ void handle_command(int argc, char *argv[]) {
 }
 
 void cmd_screenshot(int argc, char *argv[]) {
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Screenshot command help:\n");
-    printf("  spcmd screenshot [--save=path|base64] [--fullscreen] "
-           "[--format=png|bmp] [--base64=file] [--quality=value]\n\n");
-    printf("Parameter description:\n");
-    printf("  --save=path       - Save screenshot to specified path, default "
-           "to current directory\n");
-    printf("  --save=base64     - Output screenshot as Base64 encoded text to console\n");
-    printf("  --fullscreen      - Capture full screen (default)\n");
-    printf("  --format=png|jpg|bmp  - Save format, default is bmp\n");
-    printf("  --base64=file     - Save as Base64 encoded data to specified "
-           "file\n");
-    printf("  --quality=value   - Image quality for PNG (1-100), default is "
-           "100\n\n");
-    printf("Examples:\n");
-    printf("  spcmd screenshot\n");
-    printf("  spcmd screenshot --save=C:\\screenshots\\screen.png\n");
-    printf("  spcmd screenshot --save=base64\n");
-    printf("  spcmd screenshot --format=png\n");
-    printf("  spcmd screenshot --format=jpg\n");
-    printf("  spcmd screenshot --base64=screenshot.b64\n");
-    printf("  spcmd screenshot --quality=80\n");
-    return;
-  }
-
   // Get screen DC
   HDC hScreenDC = GetDC(NULL);
   if (hScreenDC == NULL) {
@@ -679,7 +594,6 @@ void cmd_shortcut(int argc, char *argv[]) {
   // Check required parameters
   if (!hasTarget) {
     printf("Error: Target program path must be specified (--target=path)\n");
-    printf("Use spcmd shortcut /help for help\n");
     return;
   }
 
@@ -785,25 +699,6 @@ void cmd_shortcut(int argc, char *argv[]) {
 }
 
 void cmd_autorun(int argc, char *argv[]) {
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Autorun command help:\n");
-    printf("  spcmd autorun --target=path [--name=name] [--args=args] "
-           "[--workdir=dir] [--remove]\n\n");
-    printf("Parameter description:\n");
-    printf("  --target=path   - Target program path (required)\n");
-    printf("  --name=name     - Autorun entry name, default is program name\n");
-    printf("  --args=args     - Program startup arguments\n");
-    printf("  --workdir=dir   - Working directory\n");
-    printf("  --remove        - Remove autorun entry\n\n");
-    printf("Examples:\n");
-    printf("  spcmd autorun --target=C:\\Windows\\notepad.exe\n");
-    printf("  spcmd autorun --target=C:\\Windows\\notepad.exe --name=Notepad "
-           "--args=\"C:\\temp\\test.txt\"\n");
-    printf("  spcmd autorun --target=C:\\Windows\\notepad.exe --remove\n");
-    return;
-  }
 
   // Check required parameters
   char targetPath[MAX_PATH] = {0};
@@ -837,7 +732,7 @@ void cmd_autorun(int argc, char *argv[]) {
   // Check required parameters
   if (!hasTarget) {
     printf("Error: Target program path must be specified (--target=path)\n");
-    printf("Use spcmd autorun --help for help\n");
+
     return;
   }
 
@@ -1078,23 +973,6 @@ void cmd_autorun(int argc, char *argv[]) {
 }
 
 void cmd_task(int argc, char *argv[]) {
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Task command help:\n");
-    printf("  spcmd task --name=task_name --exec=program_path [--trigger=daily|weekly|monthly] [--starttime=HH:MM] [--startdate=YYYY-MM-DD]\n\n");
-    printf("Parameter description:\n");
-    printf("  --name=task_name      - Task name (required)\n");
-    printf("  --exec=program_path   - Program to execute (required)\n");
-    printf("  --trigger=schedule    - Trigger type: daily, weekly, monthly (default: daily)\n");
-    printf("  --starttime=HH:MM     - Start time in 24-hour format (default: 09:00)\n");
-    printf("  --startdate=YYYY-MM-DD - Start date (default: today) - Available on Windows Vista and later\n\n");
-    printf("Examples:\n");
-    printf("  spcmd task --name=\"Daily Backup\" --exec=\"C:\\Windows\\system32\\cmd.exe\" --trigger=daily\n");
-    printf("  spcmd task --name=\"Weekly Cleanup\" --exec=\"C:\\temp\\cleanup.bat\" --trigger=weekly --starttime=22:00\n");
-    printf("  spcmd task --name=\"Monthly Report\" --exec=\"C:\\reports\\generate.exe\" --trigger=monthly --starttime=08:00 --startdate=2025-12-01\n");
-    return;
-  }
 
   // Parse parameters
   char taskName[MAX_PATH] = {0};
@@ -1135,7 +1013,7 @@ void cmd_task(int argc, char *argv[]) {
   // Check required parameters
   if (!hasName || !hasExec) {
     printf("Error: Task name and program path must be specified\n");
-    printf("Use spcmd task --help for help\n");
+
     return;
   }
 
@@ -1208,23 +1086,6 @@ void cmd_task(int argc, char *argv[]) {
 }
 
 void cmd_restart(int argc, char *argv[]) {
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Restart command help:\n");
-    printf("  spcmd restart --path=process_path [--workdir=working_directory]\n\n");
-    printf("Parameter description:\n");
-    printf("  --path=process_path   - Path to the process executable to restart "
-           "(required)\n");
-    printf("  --workdir=working_dir - Working directory for the process "
-           "(optional)\n\n");
-    printf("Examples:\n");
-    printf("  spcmd restart --path=\"C:\\Windows\\notepad.exe\"\n");
-    printf("  spcmd restart --path=\"C:\\Program Files\\MyApp\\myapp.exe\"\n");
-    printf("  spcmd restart --path=\"C:\\MyApp\\myapp.exe\" "
-           "--workdir=\"C:\\MyApp\"\n");
-    return;
-  }
 
   // Parse parameters
   char processPath[MAX_PATH] = {0};
@@ -1247,7 +1108,7 @@ void cmd_restart(int argc, char *argv[]) {
   // Check required parameters
   if (!hasPath) {
     printf("Error: Process path must be specified (--path=process_path)\n");
-    printf("Use spcmd restart /help for help\n");
+
     return;
   }
 
@@ -1366,24 +1227,6 @@ void cmd_restart(int argc, char *argv[]) {
 
 void cmd_exec2(int argc, char *argv[]) {
 
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("exec2 command help:\n");
-    printf("  spcmd exec2 [show/hide/min/max] [working folder] [application + "
-           "command-line]\n\n");
-    printf("Parameter description:\n");
-    printf("  show/hide/min/max  - Window state for the application\n");
-    printf("  working folder     - Working directory for the application\n");
-    printf("  application        - Application to run with optional "
-           "command-line arguments\n\n");
-    printf("Examples:\n");
-    printf("  spcmd exec2 show \"f:\\winnt\\system32\" "
-           "\"f:\\winnt\\system32\\calc.exe\"\n");
-    printf("  spcmd exec2 hide c:\\temp \"c:\\temp\\wul.exe\" /savelangfile\n");
-    return;
-  }
-
   // Check if required parameters are provided
   if (argc < 5) {
     printf(
@@ -1444,19 +1287,6 @@ void cmd_exec2(int argc, char *argv[]) {
 }
 
 void cmd_infoboxtop(int argc, char *argv[]) {
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("infoboxtop command help:\n");
-    printf("  spcmd infoboxtop [message text] [title]\n\n");
-    printf("Parameter description:\n");
-    printf("  message text  - Message to display in the box\n");
-    printf("  title         - Title of the message box\n\n");
-    printf("Examples:\n");
-    printf("  spcmd infoboxtop \"This is a top-most message box!\" \"Top-Most "
-           "Message\"\n");
-    return;
-  }
 
   // Check if required parameters are provided
   if (argc < 4) {
@@ -1479,20 +1309,6 @@ void cmd_infoboxtop(int argc, char *argv[]) {
 }
 
 void cmd_qboxtop(int argc, char *argv[]) {
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("qboxtop command help:\n");
-    printf("  spcmd qboxtop [message text] [title] [program to run]\n\n");
-    printf("Parameter description:\n");
-    printf("  message text  - Question to display in the box\n");
-    printf("  title         - Title of the question box\n");
-    printf("  program       - Program to run if user answers Yes\n\n");
-    printf("Examples:\n");
-    printf("  spcmd qboxtop \"Do you want to run the calculator?\" "
-           "\"Question\" \"calc.exe\"\n");
-    return;
-  }
 
   // Check if required parameters are provided
   if (argc < 5) {
@@ -2277,45 +2093,6 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
 }
 
 void cmd_window(int argc, char *argv[]) {
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Window command help:\n");
-    printf("  spcmd window --text=message [--title=title] [--width=width] "
-           "[--height=height] [--fontsize=size] [--bgcolor=color] "
-           "[--textcolor=color] [--font=fontname] [--bold] [--modal] [--nodrag]\n\n");
-    printf("Parameter description:\n");
-    printf("  --text=message     - Window display text (required)\n");
-    printf("  --title=title      - Window title, default is \"系统提示\"\n");
-    printf("  --width=width      - Window width in pixels, default is 600\n");
-    printf("  --height=height    - Window height in pixels, default is 400\n");
-    printf("  --fontsize=size    - Font size, default is 18\n");
-    printf("  --bgcolor=color    - Background color as name "
-           "(white,black,red,green,blue,yellow,cyan,magenta,gray,orange,purple,"
-           "pink,lightblue,lightgreen,lightgray) or RGB values (r,g,b), "
-           "default is white\n");
-    printf("  --textcolor=color  - Text color as name or RGB values, default "
-           "is black\n");
-    printf("  --font=fontname    - Font name (supports Chinese fonts, e.g. '微软雅黑', '宋体', '黑体'), default auto-selected\n");
-    printf("  --bold             - Set text to bold\n");
-    printf("  --modal            - Make window modal (blocks other windows "
-           "until closed and enables forced interaction)\n");
-    printf("  --nodrag           - Disable window dragging\n\n");
-    printf("Examples:\n");
-    printf("  spcmd window --text=\"Hello World\"\n");
-    printf("  spcmd window --text=\"Line 1\\nLine 2\\nLine 3\" "
-           "--title=\"Multi-line Text\" --width=500 --height=300\n");
-    printf("  spcmd window --text=\"Red background window\" --bgcolor=red "
-           "--fontsize=20\n");
-    printf("  spcmd window --text=\"Blue text on yellow background\" "
-           "--bgcolor=yellow --textcolor=blue\n");
-    printf("  spcmd window --text=\"Bold text example\" --bold\n");
-    printf("  spcmd window --text=\"Modal window with forced interaction\" "
-           "--modal\n");
-    printf("  spcmd window --text=\"你好，世界！\" --font=\"微软雅黑\" --fontsize=24\n");
-    printf("  spcmd window --text=\"你好，世界！\" --font=\"宋体\" --textcolor=blue\n");
-    return;
-  }
 
   // Parse parameters
   char *message = NULL;
@@ -2427,7 +2204,7 @@ void cmd_window(int argc, char *argv[]) {
   // Check if required parameters are provided
   if (!hasText) {
     printf("Error: Text parameter is required.\n");
-    printf("Use 'spcmd window /help' for usage information.\n");
+
     return;
   }
 
@@ -2650,22 +2427,6 @@ BOOL ElevatePrivileges(int argc, char *argv[]) {
 }
 
 void cmd_notify(int argc, char *argv[]) {
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Notify command help:\n");
-    printf("  spcmd notify --title=title --message=message [--icon=info|warning|error] [--timeout=seconds]\n\n");
-    printf("Parameter description:\n");
-    printf("  --title=title         - Notification title (required)\n");
-    printf("  --message=message     - Notification message (required)\n");
-    printf("  --icon=type           - Icon type: info, warning, error (default: info)\n");
-    printf("  --timeout=seconds     - Notification timeout in seconds (default: 5)\n\n");
-    printf("Examples:\n");
-    printf("  spcmd notify --title=\"System Update\" --message=\"Your system has been updated successfully.\"\n");
-    printf("  spcmd notify --title=\"Warning\" --message=\"Disk space is low.\" --icon=warning\n");
-    printf("  spcmd notify --title=\"Error\" --message=\"Application failed to start.\" --icon=error --timeout=10\n");
-    return;
-  }
 
   // 使用新的参数解析框架
   ParamDefinition param_defs[] = {
@@ -2686,7 +2447,7 @@ void cmd_notify(int argc, char *argv[]) {
   
   // 检查必填参数
   if (!check_required_params(context)) {
-    printf("Use spcmd notify --help for help\n");
+
     free_param_context(context);
     return;
   }
@@ -2911,24 +2672,6 @@ void display_ini_data(struct IniData *data) {
 }
 
 void cmd_config(int argc, char *argv[]) {
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Config command help:\n");
-    printf("  spcmd config --file=path [--action=get|set|save|del] [--section=section] [--key=key] [--value=value]\n\n");
-    printf("Parameter description:\n");
-    printf("  --file=path           - INI file path (required)\n");
-    printf("  --action=action       - Action: get, set, save, del (default: get)\n");
-    printf("  --section=section     - Section name (required for get/set/del)\n");
-    printf("  --key=key             - Key name (required for get/set/del)\n");
-    printf("  --value=value         - Value (required for set)\n\n");
-    printf("Examples:\n");
-    printf("  spcmd config --file=config.ini --action=get --section=General --key=Username\n");
-    printf("  spcmd config --file=config.ini --action=set --section=General --key=Username --value=John\n");
-    printf("  spcmd config --file=config.ini --action=save\n");
-    printf("  spcmd config --file=config.ini --action=del --section=General --key=Username\n");
-    return;
-  }
 
   // Parse parameters
   char filePath[MAX_PATH] = {0};
@@ -2968,7 +2711,7 @@ void cmd_config(int argc, char *argv[]) {
   // Check required parameters
   if (!hasFile) {
     printf("Error: File path must be specified\n");
-    printf("Use spcmd config --help for help\n");
+
     return;
   }
 
@@ -2979,7 +2722,7 @@ void cmd_config(int argc, char *argv[]) {
     // 获取单个配置项
     if (!hasSection || !hasKey) {
       printf("Error: Section and key must be specified for get action\n");
-      printf("Use spcmd config --help for help\n");
+  
       return;
     }
     
@@ -3005,7 +2748,7 @@ void cmd_config(int argc, char *argv[]) {
     // 写入INI文件
     if (!hasSection || !hasKey || !hasValue) {
       printf("Error: Section, key, and value must be specified for write action\n");
-      printf("Use spcmd config --help for help\n");
+  
       return;
     }
     
@@ -3070,7 +2813,7 @@ void cmd_config(int argc, char *argv[]) {
     // 删除INI条目
     if (!hasSection || !hasKey) {
       printf("Error: Section and key must be specified for delete action\n");
-      printf("Use spcmd config --help for help\n");
+  
       return;
     }
     
@@ -3142,21 +2885,6 @@ void cmd_config(int argc, char *argv[]) {
 }
 
 int cmd_process(int argc, char *argv[]) {
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Process command help:\n");
-    printf("  spcmd process [--action=check|kill] [--name=process_name] [--pid=process_id]\n\n");
-    printf("Parameter description:\n");
-    printf("  --action=action       - Action to perform: check (default), kill\n");
-    printf("  --name=process_name   - Process name to check or kill\n");
-    printf("  --pid=process_id      - Process ID to check or kill\n\n");
-    printf("Examples:\n");
-    printf("  spcmd process --name=notepad.exe\n");
-    printf("  spcmd process --pid=1234\n");
-    printf("  spcmd process --action=kill --name=notepad.exe\n");
-    return 0;
-  }
 
   // Parse parameters
   char action[20] = "check";  // default action
@@ -3178,7 +2906,7 @@ int cmd_process(int argc, char *argv[]) {
   // Validate parameters
   if (strlen(processName) == 0 && processId == 0) {
     printf("Error: Either process name or PID must be specified\n");
-    printf("Use spcmd process --help for help\n");
+
 
     return 1;
   } else if (strcmp(action, "check") == 0) {
@@ -3238,7 +2966,7 @@ int cmd_process(int argc, char *argv[]) {
     }
   } else {
     printf("Error: Unknown action '%s'\n", action);
-      printf("Use spcmd process --help for help\n");
+
       return 1;
   }
   
@@ -3433,20 +3161,6 @@ uint64_t generate_snowflake_id(snowflake_generator *sf) {
 }
 
 char* cmd_random(int argc, char *argv[]) {
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Random command help:\n");
-    printf("  spcmd random [--type=uuid4|uuid7|snowflake|number]\n\n");
-    printf("Parameter description:\n");
-    printf("  --type=type           - Type of random ID: uuid4, uuid7, snowflake, number (default: uuid4)\n\n");
-    printf("Examples:\n");
-    printf("  spcmd random\n");
-    printf("  spcmd random --type=uuid7\n");
-    printf("  spcmd random --type=snowflake\n");
-    printf("  spcmd random --type=number\n");
-    return NULL;
-  }
 
   // 使用新的参数解析框架
   ParamDefinition param_defs[] = {
@@ -3523,21 +3237,6 @@ char* cmd_random(int argc, char *argv[]) {
 void cmd_logrotate(int argc, char *argv[]) {
   // logrotate [--path=path_to_log_file] [--maxsize=size_in_mb] [--daily]
   // Rotates log files based on size or daily schedule.
-
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Logrotate command help:\n");
-    printf("  spcmd logrotate [--path=path_to_log_file] [--maxsize=size_in_mb] [--daily]\n\n");
-    printf("Parameter description:\n");
-    printf("  --path=path_to_log_file  - Path to the log file to rotate\n");
-    printf("  --maxsize=size_in_mb     - Maximum size in MB before rotation (default: 10)\n");
-    printf("  --daily                  - Rotate daily (default: size-based rotation)\n\n");
-    printf("Examples:\n");
-    printf("  spcmd logrotate --path=\"C:\\Logs\\app.log\" --maxsize=50\n");
-    printf("  spcmd logrotate --path=\"C:\\Logs\\app.log\" --daily\n");
-    return;
-  }
 
   // Parse parameters
   char path[MAX_PATH] = "app.log";  // default log file
@@ -3942,25 +3641,6 @@ LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
 
 // 托盘图标命令
 void cmd_tray(int argc, char *argv[]) {
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Tray command help:\n");
-    printf("  spcmd tray [--process=name] [--title=title] [icon_path]\n");
-    printf("  spcmd tray --path=process_path [--title=title]\n\n");
-    printf("Parameter description:\n");
-    printf("  --process=name        - Process name to monitor (optional)\n");
-    printf("  --title=title         - Tray icon title (optional)\n");
-    printf("  --path=process_path   - Process path (auto detect process name and icon)\n");
-    printf("  icon_path             - Icon file path (optional, can be specified directly)\n\n");
-    printf("Examples:\n");
-    printf("  spcmd tray\n");
-    printf("  spcmd tray --process=python.exe --title=\"Python Monitor\"\n");
-    printf("  spcmd tray --process=notepad.exe C:\\Windows\\notepad.exe\n");
-    printf("  spcmd tray C:\\Windows\\notepad.exe\n");
-    printf("  spcmd tray --path=C:\\Windows\\notepad.exe\n");
-    return;
-  }
 
   // Parse parameters
   char process_name[MAX_PATH] = "python.exe";  // default process name
