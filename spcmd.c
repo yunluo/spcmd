@@ -2478,12 +2478,16 @@ BOOL IsRunAsAdmin() {
                                 DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0,
                                 &pAdministratorsGroup)) {
     dwError = GetLastError();
+    // 在SID操作失败时，确保返回FALSE而不是未定义的行为
+    fIsRunAsAdmin = FALSE;
     goto Cleanup;
   }
 
   // 检查令牌是否包含管理员组
   if (!CheckTokenMembership(NULL, pAdministratorsGroup, &fIsRunAsAdmin)) {
     dwError = GetLastError();
+    // 在检查令牌失败时，确保返回FALSE而不是未定义的行为
+    fIsRunAsAdmin = FALSE;
     goto Cleanup;
   }
 
@@ -2497,6 +2501,11 @@ Cleanup:
   // 忽略ERROR_NO_TOKEN错误，这是正常情况
   if (ERROR_NO_TOKEN == dwError) {
     dwError = ERROR_SUCCESS;
+  }
+  
+  // 如果有错误且不是ERROR_NO_TOKEN，则返回FALSE表示检查失败
+  if (dwError != ERROR_SUCCESS) {
+    return FALSE;
   }
 
   return fIsRunAsAdmin;
