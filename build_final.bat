@@ -98,6 +98,7 @@ if exist spcmd.exe (
 REM Optional: Copy executable to VM directory if it exists
 if exist "D:\VM\VM_PATH\" (
     copy spcmd.exe D:\VM\VM_PATH\ >nul 2>&1
+    copy spcmd.exe D:\Python_Work\psg\ >nul 2>&1
     echo Copied executable to VM directory
 ) else (
     echo VM directory not found, skipping copy

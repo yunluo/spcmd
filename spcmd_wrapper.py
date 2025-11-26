@@ -493,6 +493,362 @@ def main():
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
+    elif command == "screenshot":
+        # 解析参数
+        save_path = None
+        format_type = "bmp"
+        quality = 100
+        
+        for arg in sys.argv[2:]:
+            if arg.startswith("--save="):
+                save_path = arg.split("=", 1)[1]
+            elif arg.startswith("--format="):
+                format_type = arg.split("=", 1)[1]
+            elif arg.startswith("--quality="):
+                quality = int(arg.split("=", 1)[1])
+        
+        try:
+            result = take_screenshot(save_path, format_type, quality)
+            print(result)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif command == "shortcut":
+        # 解析参数
+        target = None
+        name = None
+        description = None
+        icon = None
+        workdir = None
+        
+        for arg in sys.argv[2:]:
+            if arg.startswith("--target="):
+                target = arg.split("=", 1)[1]
+            elif arg.startswith("--name="):
+                name = arg.split("=", 1)[1]
+            elif arg.startswith("--desc="):
+                description = arg.split("=", 1)[1]
+            elif arg.startswith("--icon="):
+                icon = arg.split("=", 1)[1]
+            elif arg.startswith("--workdir="):
+                workdir = arg.split("=", 1)[1]
+        
+        if not target:
+            print("Error: --target is required", file=sys.stderr)
+            sys.exit(1)
+        
+        try:
+            result = create_shortcut(target, name, description, icon, workdir)
+            print(result)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif command == "autorun":
+        # 解析参数
+        target = None
+        name = None
+        args = None
+        workdir = None
+        remove = False
+        
+        for arg in sys.argv[2:]:
+            if arg.startswith("--target="):
+                target = arg.split("=", 1)[1]
+            elif arg.startswith("--name="):
+                name = arg.split("=", 1)[1]
+            elif arg.startswith("--args="):
+                args = arg.split("=", 1)[1]
+            elif arg.startswith("--workdir="):
+                workdir = arg.split("=", 1)[1]
+            elif arg == "--remove":
+                remove = True
+        
+        if not target:
+            print("Error: --target is required", file=sys.stderr)
+            sys.exit(1)
+        
+        try:
+            result = configure_autorun(target, name, args, workdir, remove)
+            print(result)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif command == "infobox":
+        if len(sys.argv) < 3:
+            print("Error: message is required", file=sys.stderr)
+            sys.exit(1)
+        
+        message = sys.argv[2]
+        title = sys.argv[3] if len(sys.argv) > 3 else "信息"
+        
+        try:
+            result = show_infobox(message, title)
+            print(result)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif command == "qbox":
+        if len(sys.argv) < 3:
+            print("Error: message is required", file=sys.stderr)
+            sys.exit(1)
+        
+        message = sys.argv[2]
+        title = sys.argv[3] if len(sys.argv) > 3 else "问题"
+        program = sys.argv[4] if len(sys.argv) > 4 else None
+        
+        try:
+            result = show_question_box(message, title, program)
+            print(result)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif command == "window":
+        # 解析参数
+        text = None
+        title = "系统提示"
+        width = 600
+        height = 400
+        fontsize = 18
+        bgcolor = "white"
+        textcolor = "black"
+        font = None
+        bold = False
+        modal = False
+        nodrag = False
+        
+        for arg in sys.argv[2:]:
+            if arg.startswith("--text="):
+                text = arg.split("=", 1)[1]
+            elif arg.startswith("--title="):
+                title = arg.split("=", 1)[1]
+            elif arg.startswith("--width="):
+                width = int(arg.split("=", 1)[1])
+            elif arg.startswith("--height="):
+                height = int(arg.split("=", 1)[1])
+            elif arg.startswith("--fontsize="):
+                fontsize = int(arg.split("=", 1)[1])
+            elif arg.startswith("--bgcolor="):
+                bgcolor = arg.split("=", 1)[1]
+            elif arg.startswith("--textcolor="):
+                textcolor = arg.split("=", 1)[1]
+            elif arg.startswith("--font="):
+                font = arg.split("=", 1)[1]
+            elif arg == "--bold":
+                bold = True
+            elif arg == "--modal":
+                modal = True
+            elif arg == "--nodrag":
+                nodrag = True
+        
+        if not text:
+            print("Error: --text is required", file=sys.stderr)
+            sys.exit(1)
+        
+        try:
+            result = show_custom_window(text, title, width, height, fontsize, bgcolor, textcolor, font, bold, modal, nodrag)
+            print(result)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif command == "exec2":
+        if len(sys.argv) < 5:
+            print("Error: window_state, working_folder, and application are required", file=sys.stderr)
+            sys.exit(1)
+        
+        window_state = sys.argv[2]
+        working_folder = sys.argv[3]
+        application = sys.argv[4]
+        args = sys.argv[5] if len(sys.argv) > 5 else None
+        
+        try:
+            result = execute_program(window_state, working_folder, application, args)
+            print(result)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif command == "task":
+        # 解析参数
+        name = None
+        exec_path = None
+        trigger = "daily"
+        starttime = "09:00"
+        startdate = None
+        
+        for arg in sys.argv[2:]:
+            if arg.startswith("--name="):
+                name = arg.split("=", 1)[1]
+            elif arg.startswith("--exec="):
+                exec_path = arg.split("=", 1)[1]
+            elif arg.startswith("--trigger="):
+                trigger = arg.split("=", 1)[1]
+            elif arg.startswith("--starttime="):
+                starttime = arg.split("=", 1)[1]
+            elif arg.startswith("--startdate="):
+                startdate = arg.split("=", 1)[1]
+        
+        if not name or not exec_path:
+            print("Error: --name and --exec are required", file=sys.stderr)
+            sys.exit(1)
+        
+        try:
+            result = create_task(name, exec_path, trigger, starttime, startdate)
+            print(result)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif command == "restart":
+        # 解析参数
+        path = None
+        workdir = None
+        
+        for arg in sys.argv[2:]:
+            if arg.startswith("--path="):
+                path = arg.split("=", 1)[1]
+            elif arg.startswith("--workdir="):
+                workdir = arg.split("=", 1)[1]
+        
+        if not path:
+            print("Error: --path is required", file=sys.stderr)
+            sys.exit(1)
+        
+        try:
+            result = restart_process(path, workdir)
+            print(result)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif command == "notify":
+        # 解析参数
+        title = None
+        message = None
+        icon = "info"
+        timeout = 5
+        
+        for arg in sys.argv[2:]:
+            if arg.startswith("--title="):
+                title = arg.split("=", 1)[1]
+            elif arg.startswith("--message="):
+                message = arg.split("=", 1)[1]
+            elif arg.startswith("--icon="):
+                icon = arg.split("=", 1)[1]
+            elif arg.startswith("--timeout="):
+                timeout = int(arg.split("=", 1)[1])
+        
+        if not title or not message:
+            print("Error: --title and --message are required", file=sys.stderr)
+            sys.exit(1)
+        
+        try:
+            result = show_notification(title, message, icon, timeout)
+            print(result)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif command == "config":
+        # 解析参数
+        file_path = None
+        action = "get"
+        section = None
+        key = None
+        value = None
+        
+        for arg in sys.argv[2:]:
+            if arg.startswith("--file="):
+                file_path = arg.split("=", 1)[1]
+            elif arg.startswith("--action="):
+                action = arg.split("=", 1)[1]
+            elif arg.startswith("--section="):
+                section = arg.split("=", 1)[1]
+            elif arg.startswith("--key="):
+                key = arg.split("=", 1)[1]
+            elif arg.startswith("--value="):
+                value = arg.split("=", 1)[1]
+        
+        if not file_path:
+            print("Error: --file is required", file=sys.stderr)
+            sys.exit(1)
+        
+        try:
+            result = manage_config(file_path, action, section, key, value)
+            print(result)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif command == "process":
+        # 解析参数
+        action = "check"
+        name = None
+        pid = None
+        
+        for arg in sys.argv[2:]:
+            if arg.startswith("--action="):
+                action = arg.split("=", 1)[1]
+            elif arg.startswith("--name="):
+                name = arg.split("=", 1)[1]
+            elif arg.startswith("--pid="):
+                pid = int(arg.split("=", 1)[1])
+        
+        try:
+            if action == "check":
+                result = check_process(name, pid)
+                print(result)
+            elif action == "kill":
+                result = kill_process(name, pid)
+                print(result)
+            else:
+                print(f"Error: Unknown action {action}", file=sys.stderr)
+                sys.exit(1)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif command == "logrotate":
+        # 解析参数
+        file_path = None
+        maxsize = None
+        daily = False
+        
+        for arg in sys.argv[2:]:
+            if arg.startswith("--path="):
+                file_path = arg.split("=", 1)[1]
+            elif arg.startswith("--maxsize="):
+                maxsize = int(arg.split("=", 1)[1])
+            elif arg == "--daily":
+                daily = True
+        
+        if not file_path:
+            print("Error: --path is required", file=sys.stderr)
+            sys.exit(1)
+        
+        try:
+            result = rotate_log(file_path, maxsize, daily)
+            print(result)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif command == "tray":
+        # 解析参数
+        process_name = None
+        title = None
+        icon_path = None
+        
+        for arg in sys.argv[2:]:
+            if arg.startswith("--process="):
+                process_name = arg.split("=", 1)[1]
+            elif arg.startswith("--title="):
+                title = arg.split("=", 1)[1]
+            elif arg.startswith("--icon="):
+                icon_path = arg.split("=", 1)[1]
+        
+        if not process_name:
+            print("Error: --process is required", file=sys.stderr)
+            sys.exit(1)
+        
+        try:
+            result = create_tray_icon(process_name, title, icon_path)
+            print(result)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
     else:
         print(f"Unknown command: {command}")
         sys.exit(1)
