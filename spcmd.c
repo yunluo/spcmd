@@ -3258,6 +3258,7 @@ char *cmd_random(int argc, char *argv[]) {
   char *result = (char *)malloc(256); // 分配足够大的缓冲区
   if (!result) {
     printf("Error: Memory allocation failed\n");
+    free_param_context(context);
     return NULL;
   }
   result[0] = '\0'; // 初始化为空字符串
@@ -3281,6 +3282,7 @@ char *cmd_random(int argc, char *argv[]) {
     printf("Error: Unknown type '%s'. Use uuid4, uuid7, snowflake, or number\n",
            type);
     free(result);
+    free_param_context(context);
     return NULL;
   }
 
@@ -3292,28 +3294,51 @@ void cmd_logrotate(int argc, char *argv[]) {
   // logrotate [--path=path_to_log_file] [--maxsize=size_in_mb] [--daily]
   // Rotates log files based on size or daily schedule.
 
+  // 使用新的参数解析框架
+  ParamDefinition param_defs[] = {
+    {"path", NULL, FALSE, FALSE},
+    {"maxsize", NULL, FALSE, FALSE},
+    {"daily", NULL, FALSE, FALSE}
+  };
+
+  // Create parameter context
+  ParamContext *context = create_param_context(param_defs, 3);
+  if (context == NULL) {
+    printf("Error: Unable to create parameter context\n");
+    return;
+  }
+
+  // Parse parameters
+  if (!parse_parameters(context, argc, argv, 2)) {
+    free_param_context(context);
+    return;
+  }
+
   // Parse parameters
   char path[MAX_PATH] = "app.log"; // default log file
   int max_size_mb = 10;            // default max size in MB
   BOOL daily = FALSE;              // default to size-based rotation
 
-  for (int i = 2; i < argc; i++) {
-    if (strncmp(argv[i], "--path=", 7) == 0) {
-      strncpy(path, argv[i] + 7, MAX_PATH - 1);
-      path[MAX_PATH - 1] = '\0';
-    } else if (strncmp(argv[i], "--maxsize=", 10) == 0) {
-      max_size_mb = atoi(argv[i] + 10);
-      if (max_size_mb < 1)
-        max_size_mb = 1;
-    } else if (strcmp(argv[i], "--daily") == 0) {
-      daily = TRUE;
-    }
+  // Get parameter values
+  const char *path_value = get_param_value(context, "path");
+  if (path_value != NULL) {
+    strncpy(path, path_value, MAX_PATH - 1);
+    path[MAX_PATH - 1] = '\0';
   }
+
+  // Get maxsize parameter
+  max_size_mb = get_param_int_value(context, "maxsize", 10);
+  if (max_size_mb < 1)
+    max_size_mb = 1;
+
+  // Check if daily flag is set
+  daily = is_param_set(context, "daily");
 
   // Check if file exists
   WIN32_FILE_ATTRIBUTE_DATA fileAttr;
   if (!GetFileAttributesExA(path, GetFileExInfoStandard, &fileAttr)) {
     printf("Error: Log file '%s' does not exist or cannot be accessed\n", path);
+    free_param_context(context);
     return;
   }
 
@@ -3331,6 +3356,7 @@ void cmd_logrotate(int argc, char *argv[]) {
     if (GetFileAttributesA(backup_path) != INVALID_FILE_ATTRIBUTES) {
       printf("Log file already rotated today. Backup exists as '%s'\n",
              backup_path);
+      free_param_context(context);
       return;
     }
 
@@ -3371,10 +3397,12 @@ void cmd_logrotate(int argc, char *argv[]) {
     printf("Log file '%s' size (%I64u bytes) is below threshold (%I64u bytes). "
            "No rotation needed.\n",
            path, size_bytes, max_size_bytes);
+    free_param_context(context);
     return;
   }
 
   rotate_log_file(path, size_bytes);
+  free_param_context(context);
 }
 
 // 通用创建空文件函数
