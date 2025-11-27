@@ -1375,13 +1375,24 @@ void cmd_exec2(int argc, char *argv[]) {
 }
 
 void cmd_infoboxtop(int argc, char *argv[]) {
+  // 使用统一的参数解析框架
+  ParamDefinition param_defs[] = {
+    {"message", NULL, TRUE, FALSE},
+    {"title", NULL, TRUE, FALSE}
+  };
 
-  // Check if required parameters are provided
-  if (argc < 4) {
-    printf("Error: Message text and title are required\n");
-    printf("Usage: spcmd infoboxtop [message text] [title]\n");
+  ParamContext *context = create_param_context(param_defs, 2);
+  if (!context) {
+    printf("Error: Failed to create parameter context\n");
     return;
   }
+
+  // 解析参数
+  parse_parameters(context, argc, argv, 2);
+
+  // 获取参数值
+  const char *message = get_param_value(context, "message");
+  const char *title = get_param_value(context, "title");
 
   // 获取当前活跃窗口句柄，然后在该窗口上显示置顶消息框
   HWND hActiveWnd = GetForegroundWindow();
@@ -1391,19 +1402,35 @@ void cmd_infoboxtop(int argc, char *argv[]) {
   }
 
   // 显示置顶消息框
-  MessageBoxA(hActiveWnd, argv[2], argv[3],
+  MessageBoxA(hActiveWnd, message, title,
               MB_OK | MB_ICONINFORMATION | MB_SYSTEMMODAL);
   printf("Top-most message box displayed\n");
+
+  // 释放参数上下文
+  free_param_context(context);
 }
 
 void cmd_qboxtop(int argc, char *argv[]) {
+  // 使用统一的参数解析框架
+  ParamDefinition param_defs[] = {
+    {"message", NULL, TRUE, FALSE},
+    {"title", NULL, TRUE, FALSE},
+    {"program", NULL, TRUE, FALSE}
+  };
 
-  // Check if required parameters are provided
-  if (argc < 5) {
-    printf("Error: Message text, title, and program are required\n");
-    printf("Usage: spcmd qboxtop [message text] [title] [program to run]\n");
+  ParamContext *context = create_param_context(param_defs, 3);
+  if (!context) {
+    printf("Error: Failed to create parameter context\n");
     return;
   }
+
+  // 解析参数
+  parse_parameters(context, argc, argv, 2);
+
+  // 获取参数值
+  const char *message = get_param_value(context, "message");
+  const char *title = get_param_value(context, "title");
+  const char *program = get_param_value(context, "program");
 
   // 获取当前活跃窗口句柄，然后在该窗口上显示置顶消息框
   HWND hActiveWnd = GetForegroundWindow();
@@ -1413,7 +1440,7 @@ void cmd_qboxtop(int argc, char *argv[]) {
   }
 
   // 显示置顶消息框
-  int result = MessageBoxA(hActiveWnd, argv[2], argv[3],
+  int result = MessageBoxA(hActiveWnd, message, title,
                            MB_YESNO | MB_ICONQUESTION | MB_SYSTEMMODAL);
 
   if (result == IDYES) {
@@ -1426,17 +1453,20 @@ void cmd_qboxtop(int argc, char *argv[]) {
     ZeroMemory(&pi, sizeof(pi));
 
     // Start the program
-    if (CreateProcessA(NULL, argv[4], NULL, NULL, FALSE, 0, NULL, NULL, &si,
+    if (CreateProcessA(NULL, (LPSTR)program, NULL, NULL, FALSE, 0, NULL, NULL, &si,
                        &pi)) {
-      printf("Program '%s' started successfully\n", argv[4]);
+      printf("Program '%s' started successfully\n", program);
       CloseHandle(pi.hProcess);
       CloseHandle(pi.hThread);
     } else {
-      printf("Error: Failed to start program '%s'\n", argv[4]);
+      printf("Error: Failed to start program '%s'\n", program);
     }
   } else {
     printf("User chose not to run the program\n");
   }
+
+  // 释放参数上下文
+  free_param_context(context);
 }
 
 // 辅助函数：从HBITMAP获取图像数据并保存为指定格式
@@ -3888,8 +3918,8 @@ LRESULT CALLBACK FloatingWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
     // 添加About菜单项
     AppendMenu(floatingData->hMenu, MF_STRING, ID_FLOATING_ABOUT, "About");
     
-    // 设置定时器，每5秒更新一次状态
-    SetTimer(hwnd, 1, 5000, NULL);
+    // 设置定时器，每1秒更新一次状态
+    SetTimer(hwnd, 1, 1000, NULL);
     
     break;
   }
@@ -3916,8 +3946,11 @@ LRESULT CALLBACK FloatingWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
   {
     // 开始拖动
     floatingData->is_dragging = TRUE;
+    
+    // 保存鼠标相对于窗口的初始位置
     floatingData->drag_start.x = LOWORD(lParam);
     floatingData->drag_start.y = HIWORD(lParam);
+    
     SetCapture(hwnd);
     break;
   }
@@ -3925,18 +3958,17 @@ LRESULT CALLBACK FloatingWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
   case WM_MOUSEMOVE:
   {
     if (floatingData->is_dragging) {
-      // 计算新位置
-      POINT current_pos;
-      current_pos.x = LOWORD(lParam);
-      current_pos.y = HIWORD(lParam);
+      // 获取鼠标当前的屏幕坐标
+      POINT cursor_pos;
+      GetCursorPos(&cursor_pos);
       
-      // 获取窗口当前位置
+      // 获取窗口当前位置和大小
       RECT window_rect;
       GetWindowRect(hwnd, &window_rect);
       
-      // 计算新的窗口位置
-      int new_x = window_rect.left + (current_pos.x - floatingData->drag_start.x);
-      int new_y = window_rect.top + (current_pos.y - floatingData->drag_start.y);
+      // 计算新的窗口位置（鼠标位置减去初始偏移量）
+      int new_x = cursor_pos.x - floatingData->drag_start.x;
+      int new_y = cursor_pos.y - floatingData->drag_start.y;
       
       // 移动窗口
       MoveWindow(hwnd, new_x, new_y, window_rect.right - window_rect.left, 
@@ -3950,13 +3982,6 @@ LRESULT CALLBACK FloatingWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
     // 结束拖动
     floatingData->is_dragging = FALSE;
     ReleaseCapture();
-    
-    // 左键点击更新状态
-    floatingData->process_running = is_process_running(floatingData->process_name);
-    if (!floatingData->process_running) {
-      // 进程未运行，退出程序
-      PostMessage(hwnd, WM_DESTROY, 0, 0);
-    }
     break;
   }
   
@@ -4240,18 +4265,19 @@ BOOL create_floating_icon(FloatingIconData *floatingData, HINSTANCE hInstance,
   }
   
   // 计算窗口大小（基于图标大小）
-  int icon_size = GetSystemMetrics(SM_CXSMICON);
-  int window_width = icon_size + 8;  // 图标大小 + 边距
-  int window_height = icon_size + 8;
+  int icon_size = GetSystemMetrics(SM_CXICON);  // 使用大图标大小（通常32x32）
+  int window_width = icon_size;  // 图标大小 + 边距
+  int window_height = icon_size;
   
-  // 计算窗口位置（屏幕右上角）
+  // 计算窗口位置（屏幕居中）
   int screen_width = GetSystemMetrics(SM_CXSCREEN);
-  int x = screen_width - window_width - 10;  // 右边距10像素
-  int y = 10;  // 上边距10像素
+  int screen_height = GetSystemMetrics(SM_CYSCREEN);
+  int x = (screen_width - window_width) / 2;  // 水平居中
+  int y = (screen_height - window_height) / 2;  // 垂直居中
   
   // 创建浮动窗口
   HWND hwnd = CreateWindowEx(
-      WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT,  // 顶层、分层、透明
+      WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TOOLWINDOW,  // 顶层、分层、工具窗口（不在任务栏显示）
       "SPCMDFloatingIconClass",
       title,
       WS_POPUP | WS_VISIBLE,  // 弹出窗口，可见

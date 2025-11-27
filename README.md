@@ -77,7 +77,7 @@ spcmd screenshot --quality=80
 spcmd screenshot --save=screen.jpg --format=jpg --quality=90
 spcmd screenshot --save=base64 --format=jpg --quality=90
 ```
-
+> 需要自己加：data:image/jpeg;base64,
 #### 创建快捷方式
 ```bash
 spcmd shortcut --target=path [--name=name] [--desc=description] [--icon=iconpath] [--workdir=dir]
@@ -117,19 +117,19 @@ spcmd autorun --target=C:\MyApp\myapp.exe --remove
 
 #### 信息弹窗
 ```bash
-spcmd infoboxtop "message" ["title"]
-spcmd qboxtop "message" ["title"] "command"
+spcmd infoboxtop --message=message --title=title
+spcmd qboxtop --message=message --title=title --program=command
 ```
 
 参数说明:
-- `message` - 要显示的消息文本
-- `title` - 弹窗标题，默认为"信息"
-- `command` - 确认后要执行的程序
+- `--message=message` - 要显示的消息文本（必需）
+- `--title=title` - 弹窗标题，默认为"信息"
+- `--program=command` - 确认后要执行的程序（qboxtop必需）
 
 示例:
 ```bash
-spcmd infoboxtop "Hello World" "Greeting"
-spcmd qboxtop "Do you want to run the calculator?" "Question" "calc.exe"
+spcmd infoboxtop --message="Hello World" --title="Greeting"
+spcmd qboxtop --message="Do you want to run the calculator?" --title="Question" --program="calc.exe"
 ```
 
 #### 自定义窗口
