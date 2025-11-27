@@ -44,21 +44,37 @@ spcmd screenshot [--save=path|base64] [--format=png|bmp|jpg] [--base64=file] [--
 ```
 
 参数说明:
-- `--save=path` - 保存截图到指定路径，默认保存到当前目录
-- `--save=base64` - 将截图以Base64编码文本输出到控制台
-- `--format=png|jpg|bmp` - 保存格式，默认为bmp
-- `--base64=file` - 保存为Base64编码数据到指定文件
-- `--quality=value` - 图片质量（1-100），默认为100
+- `--save=path` - 保存截图到指定路径，默认保存为当前目录的 screenshot.bmp
+- `--save=base64` - 将截图以 Base64 编码文本输出到控制台
+- `--format=png|bmp|jpg` - 保存格式，默认为 bmp
+- `--base64=file` - 保存为 Base64 编码数据到指定文件
+- `--quality=value` - 图片质量（1-100），默认为 100
 
 示例:
 ```bash
+# 默认截图，保存为 screenshot.bmp
 spcmd screenshot
+
+# 保存到指定路径
 spcmd screenshot --save=C:\screenshots\screen.png
+
+# 输出 Base64 到控制台
 spcmd screenshot --save=base64
+
+# 指定格式为 png
 spcmd screenshot --format=png
+
+# 指定格式为 jpg
 spcmd screenshot --format=jpg
+
+# 保存为 Base64 文件
 spcmd screenshot --base64=screenshot.b64
+
+# 指定图片质量
 spcmd screenshot --quality=80
+
+# 组合使用参数
+spcmd screenshot --save=screen.jpg --format=jpg --quality=90
 ```
 
 #### 创建快捷方式
@@ -146,18 +162,18 @@ spcmd window --text="你好，世界！" --textcolor=blue
 
 #### 程序执行
 ```bash
-spcmd exec2 [show/hide/min/max] [working folder] [application + command-line]
+spcmd process --action=run --exec=command [--workdir=working_directory]
 ```
 
 参数说明:
-- `show/hide/min/max` - 应用程序的窗口状态
-- `working folder` - 应用程序的工作目录
-- `application` - 要运行的应用程序及可选的命令行参数
+- `--action=run` - 执行程序的操作
+- `--exec=command` - 要运行的应用程序及可选的命令行参数（必需）
+- `--workdir=working_directory` - 应用程序的工作目录
 
 示例:
 ```bash
-spcmd exec2 show "C:\Windows\System32" "C:\Windows\System32\calc.exe"
-spcmd exec2 hide C:\temp "C:\temp\wul.exe" /savelangfile
+spcmd process --action=run --exec=calc.exe --workdir="C:\Windows\System32"
+spcmd process --action=run --exec="notepad.exe test.txt" --workdir=C:\temp
 ```
 
 #### 计划任务
@@ -316,7 +332,7 @@ spcmd infoboxtop "Hello World" "Greeting"
 spcmd window --text="Welcome to SPCMD!" --title="SPCMD Window" --bgcolor=lightblue --textcolor=blue --bold
 
 # 执行程序
-spcmd exec2 show "C:\temp" "notepad.exe" "test.txt"
+spcmd process --action=run --exec="notepad.exe test.txt" --workdir=C:\temp
 
 # 生成随机UUID
 spcmd random --type=uuid4

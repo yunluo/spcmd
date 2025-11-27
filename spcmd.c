@@ -91,7 +91,6 @@ void cmd_shortcut(int argc, char *argv[]);
 void cmd_autorun(int argc, char *argv[]);
 void cmd_infoboxtop(int argc, char *argv[]);
 void cmd_qboxtop(int argc, char *argv[]);
-void cmd_exec2(int argc, char *argv[]);
 void cmd_task(int argc, char *argv[]);
 void cmd_restart(int argc, char *argv[]);
 void cmd_window(int argc, char *argv[]);
@@ -161,38 +160,6 @@ typedef struct {
   BOOL bold;          // 是否粗体
 } WindowParams;
 
-// 检测程序是否在命令行中启动或输出被重定向的函数
-BOOL IsLaunchedFromConsole() {
-  // 检查是否连接到控制台或输出被重定向
-  BOOL isConsole = FALSE;
-
-  // 尝试获取标准输出句柄
-  HANDLE hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-  if (hStdOutput != NULL && hStdOutput != INVALID_HANDLE_VALUE) {
-    // 检查是否是控制台输出或被重定向
-    DWORD mode;
-    if (GetConsoleMode(hStdOutput, &mode)) {
-      // 直接连接到控制台
-      isConsole = TRUE;
-    } else if (GetLastError() == ERROR_INVALID_PARAMETER) {
-      // 输出被重定向到文件或管道
-      isConsole = TRUE;
-    }
-  }
-
-  // 同时检查标准输入是否连接到控制台
-  if (!isConsole) {
-    HANDLE hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    if (hStdInput != NULL && hStdInput != INVALID_HANDLE_VALUE) {
-      DWORD mode;
-      if (GetConsoleMode(hStdInput, &mode)) {
-        isConsole = TRUE;
-      }
-    }
-  }
-
-  return isConsole;
-}
 
 // WinMain函数：GUI应用程序的入口点
 int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
@@ -298,8 +265,8 @@ void handle_command(int argc, char *argv[]) {
         } else if (strcmp(command_name, "random") == 0) {
           char *result = cmd_random(argc, resolved_argv);
           if (result != NULL) {
-            // 直接使用printf并确保刷新输出流
-            printf("%s\n", result);
+            // 直接使用printf并确保刷新输出流，不添加换行符
+            printf("%s", result);
             fflush(stdout);
             free(result);
           } else {
@@ -1216,41 +1183,48 @@ void cmd_restart(int argc, char *argv[]) {
     CloseHandle(hSnapshot);
   }
 
-  // Wait a bit for processes to terminate
-  // 增加等待时间并检查进程是否完全终止
-  Sleep(2000);
+  // Wait for processes to terminate with a timeout
+  BOOL processStillRunning = TRUE;
+  DWORD waitCount = 0;
+  const DWORD maxWaitCount = 10; // 最多等待5秒
+  
+  while (processStillRunning && waitCount < maxWaitCount) {
+    Sleep(500); // 每次等待500毫秒
+    waitCount++;
+    
+    processStillRunning = FALSE;
+    HANDLE hSnapshot2 = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnapshot2 != INVALID_HANDLE_VALUE) {
+      PROCESSENTRY32 pe32_2;
+      pe32_2.dwSize = sizeof(PROCESSENTRY32);
 
-  // 可选：再次检查进程是否已终止
-  HANDLE hSnapshot2 = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-  if (hSnapshot2 != INVALID_HANDLE_VALUE) {
-    PROCESSENTRY32 pe32_2;
-    pe32_2.dwSize = sizeof(PROCESSENTRY32);
+      if (Process32First(hSnapshot2, &pe32_2)) {
+        do {
+          // 创建进程名的副本以避免修改原始数据
+          char procName2[MAX_PATH];
+          strncpy(procName2, pe32_2.szExeFile, MAX_PATH - 1);
+          procName2[MAX_PATH - 1] = '\0';
 
-    BOOL processStillRunning = FALSE;
-    if (Process32First(hSnapshot2, &pe32_2)) {
-      do {
-        // 创建进程名的副本以避免修改原始数据
-        char procName2[MAX_PATH];
-        strncpy(procName2, pe32_2.szExeFile, MAX_PATH - 1);
-        procName2[MAX_PATH - 1] = '\0';
+          char *procDot2 = strrchr(procName2, '.');
+          if (procDot2 != NULL) {
+            *procDot2 = '\0';
+          }
 
-        char *procDot2 = strrchr(procName2, '.');
-        if (procDot2 != NULL) {
-          *procDot2 = '\0';
-        }
-
-        if (_stricmp(procName2, processName) == 0) {
-          processStillRunning = TRUE;
-          break;
-        }
-      } while (Process32Next(hSnapshot2, &pe32_2));
+          if (_stricmp(procName2, processName) == 0) {
+            processStillRunning = TRUE;
+            printf("Process still running, waiting... (%lu/%lu)\n", waitCount, maxWaitCount);
+            break;
+          }
+        } while (Process32Next(hSnapshot2, &pe32_2));
+      }
+      CloseHandle(hSnapshot2);
     }
-    CloseHandle(hSnapshot2);
-
-    // 如果进程仍在运行，再等待一段时间
-    if (processStillRunning) {
-      Sleep(1000);
-    }
+  }
+  
+  if (processStillRunning) {
+    printf("Warning: Some processes may still be running after timeout\n");
+  } else {
+    printf("All processes terminated successfully\n");
   }
 
   // Now start the new process
@@ -3161,9 +3135,9 @@ void generate_uuid_v7(char *uuid_str) {
   // 获取当前时间戳（毫秒）
   uint64_t timestamp = get_current_timestamp_ms();
 
-  // 生成随机数据
-  uint32_t rand_a = rand() * RAND_MAX + rand();
-  uint32_t rand_b = rand() * RAND_MAX + rand();
+  // 生成随机数据，使用更安全的方式避免整数溢出
+  uint32_t rand_a = ((unsigned int)rand() << 16) | (unsigned int)rand();
+  uint32_t rand_b = ((unsigned int)rand() << 16) | (unsigned int)rand();
 
   // UUID v7格式：
   // 时间戳（48位）+ 随机数（12位）+ 版本（4位）+ 变体（2位）+ 随机数（62位）
@@ -3172,7 +3146,7 @@ void generate_uuid_v7(char *uuid_str) {
   uint32_t ts_high = (timestamp >> 16) & 0xFFFFFFFF;
 
   // 时间戳低位（16位）+ 随机数高位（12位）
-  uint32_t ts_low_rand =
+  uint32_t ts_low_rand = 
       ((timestamp & 0xFFFF) << 12) | ((rand_a >> 20) & 0xFFF);
 
   // 随机数中位（16位），设置版本为0111（v7）
@@ -3184,9 +3158,14 @@ void generate_uuid_v7(char *uuid_str) {
   rand_low |= 0x8000;                  // 设置变体为10
 
   // 格式化为UUID字符串
-  sprintf(uuid_str, "%08x-%04x-%04x-%04x-%04x%08x", ts_high,
-          ts_low_rand & 0xFFFF, (ts_low_rand >> 16) & 0xFFFF, rand_mid,
-          rand_low, rand_b >> 16);
+  // UUID格式：8-4-4-4-12
+  sprintf(uuid_str, "%08x-%04x-%04x-%04x-%04x%08x", 
+          ts_high,
+          (ts_low_rand >> 16) & 0xFFFF, // 时间戳低位和随机数高位的高16位
+          ts_low_rand & 0xFFFF,         // 时间戳低位和随机数高位的低16位
+          rand_mid,                     // 版本字段
+          rand_low,                     // 变体位
+          rand_b >> 16);                // 剩余随机数
 }
 
 // 雪花ID生成器结构
@@ -3209,10 +3188,21 @@ snowflake_generator init_snowflake() {
 uint64_t generate_snowflake_id(snowflake_generator *sf) {
   uint64_t timestamp = get_current_timestamp_ms();
 
-  // 如果时钟回拨，等待
+  // 如果时钟回拨，使用更严格的处理
   if (timestamp < sf->last_timestamp) {
-    // 简单处理，实际应用中可能需要更好的策略
-    timestamp = sf->last_timestamp;
+    // 等待时钟赶上，最多等待100毫秒
+    uint64_t wait_count = 0;
+    while (timestamp < sf->last_timestamp) {
+      Sleep(1); // 等待1毫秒
+      timestamp = get_current_timestamp_ms();
+      wait_count++;
+      
+      // 如果等待超过100毫秒，使用当前时间戳并增加序列号
+      if (wait_count > 100) {
+        timestamp = sf->last_timestamp;
+        break;
+      }
+    }
   }
 
   // 如果同一毫秒内，序列号递增
@@ -3221,6 +3211,7 @@ uint64_t generate_snowflake_id(snowflake_generator *sf) {
     // 如果序列号溢出，等待下一毫秒
     if (sf->sequence == 0) {
       while (timestamp <= sf->last_timestamp) {
+        Sleep(1); // 等待1毫秒
         timestamp = get_current_timestamp_ms();
       }
     }
@@ -3273,29 +3264,17 @@ char *cmd_random(int argc, char *argv[]) {
     char uuid_str[37]; // UUID字符串长度为36字符+1个结束符
     generate_uuid_v4(uuid_str);
     sprintf(result, "%s", uuid_str);
-    // 直接输出结果
-    printf("%s\n", uuid_str);
-    fflush(stdout);
   } else if (strcmp(type, "uuid7") == 0) {
     char uuid_str[37]; // UUID字符串长度为36字符+1个结束符
     generate_uuid_v7(uuid_str);
     sprintf(result, "%s", uuid_str);
-    // 直接输出结果
-    printf("%s\n", uuid_str);
-    fflush(stdout);
   } else if (strcmp(type, "snowflake") == 0) {
     snowflake_generator sf = init_snowflake();
     uint64_t id = generate_snowflake_id(&sf);
     sprintf(result, "%I64u", id);
-    // 直接输出结果
-    printf("%I64u\n", id);
-    fflush(stdout);
   } else if (strcmp(type, "number") == 0) {
     int random_num = rand();
     sprintf(result, "%d", random_num);
-    // 直接输出结果
-    printf("%d\n", random_num);
-    fflush(stdout);
   } else {
     printf("Error: Unknown type '%s'. Use uuid4, uuid7, snowflake, or number\n",
            type);
