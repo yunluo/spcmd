@@ -79,18 +79,6 @@ if exist spcmd.exe (
     echo Original executable size:
     for %%I in (spcmd.exe) do echo %%~zI bytes
     
-    REM Try to use UPX for compression
-    echo.
-    echo Trying to compress executable with UPX...
-    upx --best spcmd.exe >nul 2>&1
-    if %errorlevel% equ 0 (
-        echo UPX compression successful!
-        echo Compressed executable size:
-        for %%I in (spcmd.exe) do echo %%~zI bytes
-    ) else (
-        echo Warning: UPX not found or compression failed.
-        echo Skipping compression step.
-    )
 ) else (
     echo Warning: Executable file not found
 )
