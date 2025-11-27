@@ -300,7 +300,7 @@ spcmd logrotate --path="C:\Logs\app.log" --daily
 
 #### 系统托盘图标
 ```bash
-spcmd tray --process=process_name [--title=title] [--icon=icon_path]
+spcmd tray --process=process_name [--title=title] [--icon=icon_path] [--path=process_path] [--menu="name,command"]
 ```
 
 参数说明:
@@ -308,12 +308,15 @@ spcmd tray --process=process_name [--title=title] [--icon=icon_path]
 - `--title=title` - 托盘图标标题
 - `--icon=icon_path` - 图标文件路径
 - `--path=process_path` - 进程路径（可自动检测进程名和图标）
+- `--menu="name,command"` - 菜单项定义，格式为"名称,命令"，可多次使用以添加多个菜单项
 
 示例:
 ```bash
 spcmd tray --process=notepad.exe
 spcmd tray --process=myapp.exe --title="My Application" --icon="C:\MyApp\icon.ico"
 spcmd tray --path="C:\MyApp\myapp.exe"
+spcmd tray --process=python.exe --menu="Open Notepad,notepad.exe" --menu="Open Calculator,calc.exe"
+spcmd tray --process=explorer.exe --menu="Open Logs,explorer.exe .\logs" --menu="Open Command Prompt,cmd.exe"
 ```
 
 ## 示例

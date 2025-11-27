@@ -3426,15 +3426,23 @@ void rotate_log_file(const char *path, ULONGLONG size_bytes) {
 #define ID_TRAY_EXIT 1002
 #define ID_TRAY_ABOUT 1003
 
+// 菜单命令结构
+typedef struct {
+  char name[128];    // 菜单项名称
+  char command[256]; // 菜单项对应的命令
+} MenuCommand;
+
 // 托盘图标数据结构
 typedef struct {
   HWND hwnd;
   HMENU hMenu;
   NOTIFYICONDATA nid;
-  char process_name[128]; // 减小大小，可执行文件名通常不需要MAX_PATH
-  char icon_path[128];    // 减小大小，图标路径通常不需要MAX_PATH
+  char process_name[MAX_PATH]; // 增加大小以支持完整路径
+  char icon_path[MAX_PATH];    // 增加大小以支持完整路径
   BOOL process_running;
   HICON hIcon; // 存储加载的图标
+  MenuCommand *menu_commands; // 存储菜单命令的数组
+  int menu_command_count; // 菜单命令的数量
 } TrayIconData;
 
 // 托盘图标窗口过程函数声明
@@ -3536,7 +3544,8 @@ void update_tray_icon(TrayIconData *trayData) {
 // 创建托盘图标 - XP兼容版本
 BOOL create_tray_icon(TrayIconData *trayData, HINSTANCE hInstance,
                       const char *title, const char *processName,
-                      const char *iconPath) {
+                      const char *iconPath, MenuCommand *menu_commands,
+                      int menu_command_count) {
   // 注册窗口类
   WNDCLASS wc = {0};
   wc.lpfnWndProc = TrayWndProc;
@@ -3617,8 +3626,24 @@ BOOL create_tray_icon(TrayIconData *trayData, HINSTANCE hInstance,
     return FALSE;
   }
 
-  // 创建右键菜单（取消Exit菜单项）
+  // 保存菜单命令
+  trayData->menu_commands = menu_commands;
+  trayData->menu_command_count = menu_command_count;
+
+  // 创建右键菜单
   trayData->hMenu = CreatePopupMenu();
+  
+  // 添加自定义菜单项
+  for (int i = 0; i < menu_command_count; i++) {
+    AppendMenu(trayData->hMenu, MF_STRING, ID_TRAY_ABOUT + 1 + i, menu_commands[i].name);
+  }
+  
+  // 添加分隔线
+  if (menu_command_count > 0) {
+    AppendMenu(trayData->hMenu, MF_SEPARATOR, 0, NULL);
+  }
+  
+  // 添加About菜单项
   AppendMenu(trayData->hMenu, MF_STRING, ID_TRAY_ABOUT, "About");
 
   return TRUE;
@@ -3685,6 +3710,29 @@ LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT msg, WPARAM wParam,
       MessageBox(hwnd, "SPCMD System Tray Icon\nMonitoring process status",
                  "About", MB_OK | MB_ICONINFORMATION);
       break;
+      
+    default:
+    {
+      // 处理自定义菜单项
+      int menu_id = LOWORD(wParam);
+      int custom_menu_index = menu_id - (ID_TRAY_ABOUT + 1);
+      if (custom_menu_index >= 0 && custom_menu_index < trayData->menu_command_count) {
+        // 执行对应的命令
+        char *command = trayData->menu_commands[custom_menu_index].command;
+        if (strlen(command) > 0) {
+          STARTUPINFO si = {0};
+          PROCESS_INFORMATION pi = {0};
+          si.cb = sizeof(si);
+          
+          CreateProcess(NULL, command, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
+          
+          // 关闭进程和线程句柄
+          CloseHandle(pi.hProcess);
+          CloseHandle(pi.hThread);
+        }
+      }
+      break;
+    }
     }
     break;
 
@@ -3759,6 +3807,54 @@ void cmd_tray(int argc, char *argv[]) {
     printf("Icon path: %s\n", icon_path);
   }
 
+  // 处理menu参数
+  MenuCommand *menu_commands = NULL;
+  int menu_command_count = 0;
+  
+  // 使用新的参数解析框架处理menu参数
+  ParamDefinition param_defs[] = {
+    {"menu", NULL, FALSE, TRUE}        // 菜单命令，支持多个，格式：name,command
+  };
+
+  ParamContext *context = create_param_context(param_defs, 1);
+  if (context) {
+    // 解析参数
+    parse_parameters(context, argc, argv, 2);
+    
+    // 获取所有menu参数值
+    for (int i = 0; i < context->param_count; i++) {
+      if (strcmp(context->params[i].name, "menu") == 0 && context->params[i].value) {
+        menu_command_count++;
+      }
+    }
+    
+    if (menu_command_count > 0) {
+      menu_commands = (MenuCommand *)malloc(sizeof(MenuCommand) * menu_command_count);
+      if (menu_commands) {
+        // 解析menu参数
+        int current_index = 0;
+        for (int i = 0; i < context->param_count; i++) {
+          if (strcmp(context->params[i].name, "menu") == 0 && context->params[i].value) {
+            char *menu_value = context->params[i].value;
+            char *comma_pos = strchr(menu_value, ',');
+            if (comma_pos) {
+              // 分离菜单项名称和命令
+              *comma_pos = '\0';
+              strncpy(menu_commands[current_index].name, menu_value, sizeof(menu_commands[current_index].name) - 1);
+              menu_commands[current_index].name[sizeof(menu_commands[current_index].name) - 1] = '\0';
+              strncpy(menu_commands[current_index].command, comma_pos + 1, sizeof(menu_commands[current_index].command) - 1);
+              menu_commands[current_index].command[sizeof(menu_commands[current_index].command) - 1] = '\0';
+              current_index++;
+            }
+          }
+        }
+      }
+    }
+    
+    // 释放参数上下文
+    free_param_context(context);
+  }
+  
   // 检查进程是否正在运行
   if (!is_process_running(process_name)) {
     printf("Process '%s' is not running. Tray icon will not be displayed.\n",
@@ -3777,7 +3873,7 @@ void cmd_tray(int argc, char *argv[]) {
 
   // 创建托盘图标
   if (!create_tray_icon(&trayData, GetModuleHandle(NULL), title, process_name,
-                        icon_path)) {
+                        icon_path, menu_commands, menu_command_count)) {
     printf("Error: Failed to create system tray icon\n");
     CoUninitialize();
     return;
@@ -3800,6 +3896,11 @@ void cmd_tray(int argc, char *argv[]) {
   KillTimer(trayData.hwnd, 1);
   destroy_tray_icon(&trayData);
   CoUninitialize();
+  
+  // 释放菜单命令内存
+  if (menu_commands) {
+    free(menu_commands);
+  }
 
   printf("System tray icon terminated\n");
 }
