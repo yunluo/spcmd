@@ -319,6 +319,27 @@ spcmd tray --process=python.exe --menu="Open Notepad,notepad.exe" --menu="Open C
 spcmd tray --process=explorer.exe --menu="Open Logs,explorer.exe .\logs" --menu="Open Command Prompt,cmd.exe"
 ```
 
+#### 浮动图标
+```bash
+spcmd floating --process=process_name [--title=title] [--icon=icon_path] [--path=process_path] [--menu="name,command"]
+```
+
+参数说明:
+- `--process=process_name` - 要监控的进程名称（必需）
+- `--title=title` - 浮动图标标题
+- `--icon=icon_path` - 图标文件路径
+- `--path=process_path` - 进程路径（可自动检测进程名和图标）
+- `--menu="name,command"` - 菜单项定义，格式为"名称,命令"，可多次使用以添加多个菜单项
+
+示例:
+```bash
+spcmd floating --process=notepad.exe
+spcmd floating --process=myapp.exe --title="My Application" --icon="C:\MyApp\icon.ico"
+spcmd floating --path="C:\MyApp\myapp.exe"
+spcmd floating --process=python.exe --menu="Open Notepad,notepad.exe" --menu="Open Calculator,calc.exe"
+spcmd floating --process=explorer.exe --menu="Open Logs,explorer.exe .\logs" --menu="Open Command Prompt,cmd.exe"
+```
+
 ## 示例
 
 ```bash
