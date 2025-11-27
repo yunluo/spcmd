@@ -135,7 +135,7 @@ Command command_table[] = {
 void save_as_base64_data(const char *bitmap_data, DWORD data_size,
                          const char *filename);
 int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
-                          const char *format, int quality);
+                          const char *format, int quality, BOOL quiet);
 // 系统变量解析函数声明
 char *resolve_system_variables(const char *input);
 
@@ -340,40 +340,72 @@ void cmd_screenshot(int argc, char *argv[]) {
   SelectObject(hMemoryDC, hOldBitmap);
 
   // Generate filename and format
-  char filename[MAX_PATH] = "screenshot.bmp";
-  char format[10] = "bmp";              // default format
+  char filename[MAX_PATH] = "screenshot.jpg";
+  char format[10] = "jpg";              // default format
   char base64_filename[MAX_PATH] = {0}; // for base64 encoded data
   BOOL save_as_base64 = FALSE;
   BOOL output_base64_to_console = FALSE; // Flag for --save=base64
   int quality = 100;                     // default quality
 
-  for (int i = 2; i < argc; i++) {
-    if (strncmp(argv[i], "--save=", 7) == 0) {
-      if (strcmp(argv[i] + 7, "base64") == 0) {
-        // Special case: output base64 to console
-        output_base64_to_console = TRUE;
-      } else {
-        // Normal case: save to file
-        strncpy(filename, argv[i] + 7, MAX_PATH - 1);
-        filename[MAX_PATH - 1] = '\0';
-      }
-    } else if (strncmp(argv[i], "--format=", 9) == 0) {
-      strncpy(format, argv[i] + 9, sizeof(format) - 1);
-      format[sizeof(format) - 1] = '\0';
-    } else if (strncmp(argv[i], "--base64=", 9) == 0) {
-      strncpy(base64_filename, argv[i] + 9, MAX_PATH - 1);
-      base64_filename[MAX_PATH - 1] = '\0';
-      save_as_base64 = TRUE;
-      // --active parameter is deprecated
-    } else if (strncmp(argv[i], "--quality=", 10) == 0) {
-      quality = atoi(argv[i] + 9);
-      // Ensure quality is between 1 and 100
-      if (quality < 1)
-        quality = 1;
-      if (quality > 100)
-        quality = 100;
+  // 使用统一的参数解析框架
+  ParamDefinition param_defs[] = {
+    {"save", NULL, FALSE, FALSE},
+    {"format", NULL, FALSE, FALSE},
+    {"base64", NULL, FALSE, FALSE},
+    {"quality", NULL, FALSE, FALSE}
+  };
+
+  ParamContext *context = create_param_context(param_defs, 4);
+  if (!context) {
+    printf("Error: Failed to create parameter context\n");
+    // 清理资源
+    DeleteObject(hBitmap);
+    DeleteDC(hMemoryDC);
+    ReleaseDC(NULL, hScreenDC);
+    return;
+  }
+
+  // 解析参数
+  parse_parameters(context, argc, argv, 2);
+
+  // 获取参数值
+  const char *save_value = get_param_value(context, "save");
+  if (save_value) {
+    if (strcmp(save_value, "base64") == 0) {
+      // Special case: output base64 to console
+      output_base64_to_console = TRUE;
+    } else {
+      // Normal case: save to file
+      strncpy(filename, save_value, MAX_PATH - 1);
+      filename[MAX_PATH - 1] = '\0';
     }
   }
+
+  const char *format_value = get_param_value(context, "format");
+  if (format_value) {
+    strncpy(format, format_value, sizeof(format) - 1);
+    format[sizeof(format) - 1] = '\0';
+  }
+
+  const char *base64_value = get_param_value(context, "base64");
+  if (base64_value) {
+    strncpy(base64_filename, base64_value, MAX_PATH - 1);
+    base64_filename[MAX_PATH - 1] = '\0';
+    save_as_base64 = TRUE;
+  }
+
+  const char *quality_value = get_param_value(context, "quality");
+  if (quality_value) {
+    quality = atoi(quality_value);
+    // Ensure quality is between 1 and 100
+    if (quality < 1)
+      quality = 1;
+    if (quality > 100)
+      quality = 100;
+  }
+
+  // 释放参数上下文
+  free_param_context(context);
 
   // Handle base64 encoded data save to file
   if (save_as_base64) {
@@ -418,7 +450,7 @@ void cmd_screenshot(int argc, char *argv[]) {
     // Save bitmap to memory first with the specified format
     char temp_filename[MAX_PATH] = "temp_screenshot.png";
     int result = save_bitmap_as_format(hBitmap, hScreenDC, temp_filename,
-                                       format, quality);
+                                       format, quality, TRUE); // 安静模式，不输出日志
 
     if (result) {
       // Read the saved file and encode it to base64
@@ -439,7 +471,7 @@ void cmd_screenshot(int argc, char *argv[]) {
 
               if (base64_data != NULL) {
                 // Output the base64 data to console
-                printf("%s\n", base64_data);
+                printf("%s", base64_data);
                 free(base64_data);
               }
             }
@@ -510,7 +542,7 @@ void cmd_screenshot(int argc, char *argv[]) {
     }
 
     // Use the new helper function to save the bitmap
-    save_bitmap_as_format(hBitmap, hScreenDC, filename, format, quality);
+    save_bitmap_as_format(hBitmap, hScreenDC, filename, format, quality, FALSE); // 正常模式，输出日志
   }
 
   // Clean up resources
@@ -520,27 +552,6 @@ void cmd_screenshot(int argc, char *argv[]) {
 }
 
 void cmd_shortcut(int argc, char *argv[]) {
-  printf("Creating shortcut...\n");
-
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Shortcut command help:\n");
-    printf("  spcmd shortcut --target=path [--name=name] [--desc=description] "
-           "[--icon=iconpath] [--workdir=dir]\n\n");
-    printf("Parameter description:\n");
-    printf("  --target=path       - Target program path (required)\n");
-    printf("  --name=name         - Shortcut name, default is program name\n");
-    printf("  --desc=description  - Shortcut description\n");
-    printf("  --icon=iconpath     - Icon path\n");
-    printf("  --workdir=dir       - Working directory\n\n");
-    printf("Examples:\n");
-    printf("  spcmd shortcut --target=C:\\Windows\\notepad.exe\n");
-    printf("  spcmd shortcut --target=C:\\Windows\\notepad.exe --name=Notepad "
-           "--desc=Open Notepad program\n");
-    return;
-  }
-
   // Check required parameters
   char targetPath[MAX_PATH] = {0};
   char shortcutName[MAX_PATH] = {0};
@@ -1430,7 +1441,7 @@ void cmd_qboxtop(int argc, char *argv[]) {
 
 // 辅助函数：从HBITMAP获取图像数据并保存为指定格式
 int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
-                          const char *format, int quality) {
+                          const char *format, int quality, BOOL quiet) {
   // 获取BITMAP信息
   BITMAP bmp;
   GetObject(hBitmap, sizeof(BITMAP), &bmp);
@@ -1453,16 +1464,30 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
 
   if (width != bmp.bmWidth || height != bmp.bmHeight) {
     // 需要缩放
-    hMemoryDC = CreateCompatibleDC(hScreenDC);
+    // 创建两个内存DC：一个用于原始图像，一个用于缩放后的图像
+    HDC hSrcDC = CreateCompatibleDC(hScreenDC);
+    HDC hDstDC = CreateCompatibleDC(hScreenDC);
+    
     hScaledBitmap = CreateCompatibleBitmap(hScreenDC, width, height);
-    hOldBitmap = (HBITMAP)SelectObject(hMemoryDC, hScaledBitmap);
+    HBITMAP hOldSrcBitmap = (HBITMAP)SelectObject(hSrcDC, hBitmap);
+    HBITMAP hOldDstBitmap = (HBITMAP)SelectObject(hDstDC, hScaledBitmap);
 
     // 缩放图像
-    SetStretchBltMode(hMemoryDC, HALFTONE);
-    StretchBlt(hMemoryDC, 0, 0, width, height, hScreenDC, 0, 0, bmp.bmWidth,
+    SetStretchBltMode(hDstDC, HALFTONE);
+    StretchBlt(hDstDC, 0, 0, width, height, hSrcDC, 0, 0, bmp.bmWidth,
                bmp.bmHeight, SRCCOPY);
 
+    // 清理资源
+    SelectObject(hSrcDC, hOldSrcBitmap);
+    SelectObject(hDstDC, hOldDstBitmap);
+    DeleteDC(hSrcDC);
+    
+    hMemoryDC = hDstDC; // 保存目标DC用于后续GetDIBits调用
     hBitmapToSave = hScaledBitmap;
+  } else {
+    // 不需要缩放，创建一个DC来选择原始bitmap
+    hMemoryDC = CreateCompatibleDC(hScreenDC);
+    hOldBitmap = (HBITMAP)SelectObject(hMemoryDC, hBitmap);
   }
 
   // 从bitmap获取数据
@@ -1480,28 +1505,33 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
   char *lpbitmap = (char *)GlobalLock(hDIB);
 
   // 检查GetDIBits的返回值
-  int getDIBitsResult =
-      GetDIBits(hMemoryDC ? hMemoryDC : hScreenDC, hBitmapToSave, 0,
+  int getDIBitsResult = 
+      GetDIBits(hMemoryDC, hBitmapToSave, 0,
                 (UINT)height, lpbitmap, (BITMAPINFO *)&bi, DIB_RGB_COLORS);
 
   // 检查GetDIBits的返回值
   if (getDIBitsResult == 0 || (DWORD)getDIBitsResult == GDI_ERROR) {
-    printf("Error: Failed to get DIB bits in save_bitmap_as_format\n");
+    if (!quiet) {
+      printf("Error: Failed to get DIB bits in save_bitmap_as_format\n");
+    }
     // 清理资源并返回错误
     GlobalUnlock(hDIB);
     GlobalFree(hDIB);
 
-    if (hScaledBitmap) {
-      SelectObject(hMemoryDC, hOldBitmap);
-      DeleteObject(hScaledBitmap);
+    if (hMemoryDC) {
+      if (hOldBitmap) {
+        SelectObject(hMemoryDC, hOldBitmap);
+      }
+      if (hScaledBitmap) {
+        DeleteObject(hScaledBitmap);
+      }
       DeleteDC(hMemoryDC);
     }
 
     return 0; // 返回错误
   }
 
-  // 调整RGB顺序以修复颜色发黄问题
-  // 确保不会越界访问
+  // 调整RGB顺序以修复颜色发黄问题，确保不会越界访问
   DWORD pixelCount = width * height;
   if (pixelCount > 0 && lpbitmap != NULL) {
     for (DWORD i = 0; i < pixelCount * 3 && i + 2 < dwBmpSize; i += 3) {
@@ -1517,37 +1547,43 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
   if (strcmp(format, "png") == 0 || strcmp(format, "PNG") == 0) {
     result = stbi_write_png(filename, width, height, 3, lpbitmap, width * 3);
     if (result) {
-      if (width != bmp.bmWidth || height != bmp.bmHeight) {
-        printf("Screenshot saved to: %s (scaled to %dx%d, as PNG format)\n",
-               filename, width, height);
-      } else {
-        printf("Screenshot saved to: %s (as PNG format)\n", filename);
+      if (!quiet) {
+        if (width != bmp.bmWidth || height != bmp.bmHeight) {
+          printf("Screenshot saved to: %s (scaled to %dx%d, as PNG format)\n",
+                 filename, width, height);
+        } else {
+          printf("Screenshot saved to: %s (as PNG format)\n", filename);
+        }
       }
     }
   } else if (strcmp(format, "jpg") == 0 || strcmp(format, "JPG") == 0 ||
              strcmp(format, "jpeg") == 0 || strcmp(format, "JPEG") == 0) {
     result = stbi_write_jpg(filename, width, height, 3, lpbitmap, quality);
     if (result) {
-      if (width != bmp.bmWidth || height != bmp.bmHeight) {
-        printf("Screenshot saved to: %s (scaled to %dx%d, as JPEG format)\n",
-               filename, width, height);
-      } else {
-        printf("Screenshot saved to: %s (as JPEG format)\n", filename);
+      if (!quiet) {
+        if (width != bmp.bmWidth || height != bmp.bmHeight) {
+          printf("Screenshot saved to: %s (scaled to %dx%d, as JPEG format)\n",
+                 filename, width, height);
+        } else {
+          printf("Screenshot saved to: %s (as JPEG format)\n", filename);
+        }
       }
     }
   } else { // 默认保存为BMP格式
     result = stbi_write_bmp(filename, width, height, 3, lpbitmap);
     if (result) {
-      if (width != bmp.bmWidth || height != bmp.bmHeight) {
-        printf("Screenshot saved to: %s (scaled to %dx%d, as BMP format)\n",
-               filename, width, height);
-      } else {
-        printf("Screenshot saved to: %s (as BMP format)\n", filename);
+      if (!quiet) {
+        if (width != bmp.bmWidth || height != bmp.bmHeight) {
+          printf("Screenshot saved to: %s (scaled to %dx%d, as BMP format)\n",
+                 filename, width, height);
+        } else {
+          printf("Screenshot saved to: %s (as BMP format)\n", filename);
+        }
       }
     }
   }
 
-  if (!result) {
+  if (!result && !quiet) {
     printf("Error: Unable to save screenshot to %s\n", filename);
   }
 
@@ -1555,9 +1591,13 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
   GlobalUnlock(hDIB);
   GlobalFree(hDIB);
 
-  if (hScaledBitmap) {
-    SelectObject(hMemoryDC, hOldBitmap);
-    DeleteObject(hScaledBitmap);
+  if (hMemoryDC) {
+    if (hOldBitmap) {
+      SelectObject(hMemoryDC, hOldBitmap);
+    }
+    if (hScaledBitmap) {
+      DeleteObject(hScaledBitmap);
+    }
     DeleteDC(hMemoryDC);
   }
 

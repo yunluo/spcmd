@@ -75,6 +75,7 @@ spcmd screenshot --quality=80
 
 # 组合使用参数
 spcmd screenshot --save=screen.jpg --format=jpg --quality=90
+spcmd screenshot --save=base64 --format=jpg --quality=90
 ```
 
 #### 创建快捷方式
