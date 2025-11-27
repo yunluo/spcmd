@@ -121,7 +121,6 @@ Command command_table[] = {
     {"infoboxtop", (void (*)(int, char **))cmd_infoboxtop, 0},
     {"qboxtop", (void (*)(int, char **))cmd_qboxtop, 0},
     {"window", (void (*)(int, char **))cmd_window, 0},
-    {"exec2", (void (*)(int, char **))cmd_exec2, 0},
     {"task", (void (*)(int, char **))cmd_task, 0},
     {"restart", (void (*)(int, char **))cmd_restart, 0},
     {"notify", (void (*)(int, char **))cmd_notify, 0},
@@ -1307,38 +1306,60 @@ void cmd_restart(int argc, char *argv[]) {
 
 void cmd_exec2(int argc, char *argv[]) {
 
-  // Check if required parameters are provided
-  if (argc < 5) {
-    printf(
-        "Error: Window state, working folder, and application are required\n");
-    printf("Usage: spcmd exec2 [show/hide/min/max] [working folder] "
-           "[application + command-line]\n");
+  // Check if help is needed
+  if (argc > 2 &&
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
+    printf("Exec2 command help:\n");
+    printf("  spcmd exec2 --state=show/hide/min/max --workdir=path --exec=command\n\n");
+    printf("Parameter description:\n");
+    printf("  --state=state       - Window state (show/hide/min/max, required)\n");
+    printf("  --workdir=path      - Working directory (required)\n");
+    printf("  --exec=command      - Application with optional arguments (required)\n\n");
+    printf("Examples:\n");
+    printf("  spcmd exec2 --state=show --workdir=C:\\Windows --exec=notepad.exe\n");
+    printf("  spcmd exec2 --state=max --workdir=C:\\ --exec=cmd.exe /c dir\n");
     return;
   }
 
-  // Parse window state
+  // Check required parameters
   int windowState = SW_SHOW;
-  if (strcmp(argv[2], "hide") == 0) {
-    windowState = SW_HIDE;
-  } else if (strcmp(argv[2], "min") == 0) {
-    windowState = SW_MINIMIZE;
-  } else if (strcmp(argv[2], "max") == 0) {
-    windowState = SW_MAXIMIZE;
+  char workingFolder[MAX_PATH] = {0};
+  char commandLine[MAX_PATH * 2] = {0};
+
+  BOOL hasState = FALSE;
+  BOOL hasWorkdir = FALSE;
+  BOOL hasExec = FALSE;
+
+  // Parse parameters
+  for (int i = 2; i < argc; i++) {
+    if (strncmp(argv[i], "--state=", 8) == 0) {
+      if (strcmp(argv[i] + 8, "hide") == 0) {
+        windowState = SW_HIDE;
+      } else if (strcmp(argv[i] + 8, "min") == 0) {
+        windowState = SW_MINIMIZE;
+      } else if (strcmp(argv[i] + 8, "max") == 0) {
+        windowState = SW_MAXIMIZE;
+      } else if (strcmp(argv[i] + 8, "show") == 0) {
+        windowState = SW_SHOW;
+      }
+      hasState = TRUE;
+    } else if (strncmp(argv[i], "--workdir=", 10) == 0) {
+      strncpy(workingFolder, argv[i] + 10, MAX_PATH - 1);
+      workingFolder[MAX_PATH - 1] = '\0';
+      hasWorkdir = TRUE;
+    } else if (strncmp(argv[i], "--exec=", 7) == 0) {
+      strncpy(commandLine, argv[i] + 7, sizeof(commandLine) - 1);
+      commandLine[sizeof(commandLine) - 1] = '\0';
+      hasExec = TRUE;
+    }
   }
 
-  // Get working folder and application
-  char *workingFolder = argv[3];
-  char *application = argv[4];
-
-  // Build full command line
-  char commandLine[MAX_PATH * 2] = {0};
-  strncpy(commandLine, application, MAX_PATH - 1);
-
-  // Append additional arguments if any
-  for (int i = 5; i < argc; i++) {
-    strncat(commandLine, " ", sizeof(commandLine) - strlen(commandLine) - 1);
-    strncat(commandLine, argv[i],
-            sizeof(commandLine) - strlen(commandLine) - 1);
+  // Check if required parameters are provided
+  if (!hasState || !hasWorkdir || !hasExec) {
+    printf("Error: Missing required parameters\n");
+    printf("Usage: spcmd exec2 --state=show/hide/min/max --workdir=path --exec=command\n");
+    printf("Use 'spcmd exec2 --help' for more information\n");
+    return;
   }
 
   // Run the application with specified working folder
@@ -1356,12 +1377,12 @@ void cmd_exec2(int argc, char *argv[]) {
   if (CreateProcessA(NULL, commandLine, NULL, NULL, FALSE, 0, NULL,
                      workingFolder, &si, &pi)) {
     printf("Application '%s' started successfully in folder '%s'\n",
-           application, workingFolder);
+           commandLine, workingFolder);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
   } else {
     printf("Error: Failed to start application '%s' in folder '%s'\n",
-           application, workingFolder);
+           commandLine, workingFolder);
     printf("Error code: %lu\n", GetLastError());
   }
 }
@@ -2909,6 +2930,10 @@ int cmd_process(int argc, char *argv[]) {
   char action[20] = "check"; // default action
   char processName[MAX_PATH] = {0};
   DWORD processId = 0;
+  
+  // Parameters for run action
+  char workingFolder[MAX_PATH] = {0};
+  char commandLine[MAX_PATH * 2] = {0};
 
   for (int i = 2; i < argc; i++) {
     if (strncmp(argv[i], "--action=", 9) == 0) {
@@ -2919,13 +2944,48 @@ int cmd_process(int argc, char *argv[]) {
       processName[MAX_PATH - 1] = '\0';
     } else if (strncmp(argv[i], "--pid=", 6) == 0) {
       processId = atoi(argv[i] + 6);
+    } else if (strncmp(argv[i], "--workdir=", 10) == 0) {
+      strncpy(workingFolder, argv[i] + 10, MAX_PATH - 1);
+      workingFolder[MAX_PATH - 1] = '\0';
+    } else if (strncmp(argv[i], "--exec=", 7) == 0) {
+      strncpy(commandLine, argv[i] + 7, sizeof(commandLine) - 1);
+      commandLine[sizeof(commandLine) - 1] = '\0';
     }
   }
 
   // Validate parameters
-  if (strlen(processName) == 0 && processId == 0) {
-    printf("Error: Either process name or PID must be specified\n");
+  if (strcmp(action, "run") == 0) {
+    // Run action specific validation
+    if (strlen(commandLine) == 0) {
+      printf("Error: --exec parameter is required for run action\n");
+      return 1;
+    }
+    
+    // Run the application with specified working folder
+    STARTUPINFO si;
+    PROCESS_INFORMATION pi;
 
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+
+    ZeroMemory(&pi, sizeof(pi));
+
+    // Start the application
+    if (CreateProcessA(NULL, commandLine, NULL, NULL, FALSE, 0, NULL,
+                       workingFolder, &si, &pi)) {
+      printf("Application '%s' started successfully in folder '%s'\n",
+             commandLine, workingFolder);
+      CloseHandle(pi.hProcess);
+      CloseHandle(pi.hThread);
+      return 0;
+    } else {
+      printf("Error: Failed to start application '%s' in folder '%s'\n",
+             commandLine, workingFolder);
+      printf("Error code: %lu\n", GetLastError());
+      return 1;
+    }
+  } else if (strlen(processName) == 0 && processId == 0) {
+    printf("Error: Either process name or PID must be specified\n");
     return 1;
   } else if (strcmp(action, "check") == 0) {
     // Check if process exists
