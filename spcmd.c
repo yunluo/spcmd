@@ -34,6 +34,9 @@
 #include <tlhelp32.h> // 添加这个头文件以支持进程操作
 #include <windows.h>
 
+// 资源ID定义
+#define IDI_ICON1 101
+
 // 参数定义结构体
 typedef struct {
   const char *name;  // 参数名称
@@ -2362,6 +2365,7 @@ void cmd_window(int argc, char *argv[]) {
   wc.lpszClassName = "WindowClass";
   wc.hbrBackground = CreateSolidBrush(bgColor); // 使用指定的背景色
   wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+  wc.hIcon = LoadIconA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDI_ICON1));
 
   RegisterClassA(&wc);
 
@@ -2603,6 +2607,7 @@ void cmd_notify(int argc, char *argv[]) {
     wc.lpfnWndProc = DefWindowProcW;
     wc.hInstance = GetModuleHandle(NULL);
     wc.lpszClassName = L"NotifyWindowClass";
+    wc.hIcon = LoadIconA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDI_ICON1));
 
     if (RegisterClassW(&wc)) {
       // 创建隐藏窗口 - 使用Unicode版本
@@ -2629,16 +2634,18 @@ void cmd_notify(int argc, char *argv[]) {
         }
 
         // 设置提示文本 - 使用宽字符
-        wcsncpy_s(nid.szTip, ARRAYSIZE(nid.szTip), wtitle, _TRUNCATE);
+        wcsncpy(nid.szTip, wtitle, ARRAYSIZE(nid.szTip) - 1);
+        nid.szTip[ARRAYSIZE(nid.szTip) - 1] = L'\0';
 
         // 添加通知图标 - 使用Unicode版本
         Shell_NotifyIconW(NIM_ADD, &nid);
 
         // 更新通知内容
         nid.uFlags = NIF_INFO;
-        wcsncpy_s(nid.szInfoTitle, ARRAYSIZE(nid.szInfoTitle), wtitle,
-                  _TRUNCATE);
-        wcsncpy_s(nid.szInfo, ARRAYSIZE(nid.szInfo), wmessage, _TRUNCATE);
+        wcsncpy(nid.szInfoTitle, wtitle, ARRAYSIZE(nid.szInfoTitle) - 1);
+        nid.szInfoTitle[ARRAYSIZE(nid.szInfoTitle) - 1] = L'\0';
+        wcsncpy(nid.szInfo, wmessage, ARRAYSIZE(nid.szInfo) - 1);
+        nid.szInfo[ARRAYSIZE(nid.szInfo) - 1] = L'\0';
 
         // 设置信息标志
         if (strcmp(iconType, "warning") == 0) {
@@ -3683,7 +3690,7 @@ BOOL create_tray_icon(TrayIconData *trayData, HINSTANCE hInstance,
   wc.lpfnWndProc = TrayWndProc;
   wc.hInstance = hInstance;
   wc.lpszClassName = "SPCMDTrayIconClass";
-  wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+  wc.hIcon = LoadIconA(hInstance, MAKEINTRESOURCEA(IDI_ICON1));
 
   if (!RegisterClass(&wc)) {
     return FALSE;
@@ -4255,7 +4262,7 @@ BOOL create_floating_icon(FloatingIconData *floatingData, HINSTANCE hInstance,
   wc.lpfnWndProc = FloatingWndProc;
   wc.hInstance = hInstance;
   wc.lpszClassName = "SPCMDFloatingIconClass";
-  wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+  wc.hIcon = LoadIconA(hInstance, MAKEINTRESOURCEA(IDI_ICON1));
   wc.hCursor = LoadCursor(NULL, IDC_ARROW);
   wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
 

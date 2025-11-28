@@ -1,9 +1,12 @@
 #include <windows.h>
 
+// 图标资源
+IDI_ICON1 ICON DISCARDABLE "spcmd.ico"
+
 // 版本信息资源
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 5,0,0,0
- PRODUCTVERSION 5,0,0,0
+ FILEVERSION 7,0,0,0
+ PRODUCTVERSION 7,0,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS VS_FF_DEBUG
@@ -20,12 +23,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "SPCMD Team"
             VALUE "FileDescription", "SPCMD"
-            VALUE "FileVersion", "5.0.0.0"
+            VALUE "FileVersion", "7.0.0.0"
             VALUE "InternalName", "spcmd"
             VALUE "LegalCopyright", "Copyright (C) 2025 Pein"
             VALUE "OriginalFilename", "spcmd.exe"
             VALUE "ProductName", "SPCMD"
-            VALUE "ProductVersion", "5.0.0.0"
+            VALUE "ProductVersion", "7.0.0.0"
         END
     END
     BLOCK "VarFileInfo"

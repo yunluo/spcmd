@@ -7,6 +7,7 @@ echo Ensuring Windows XP Compatibility
 echo ===================
 echo.
 
+set PATH="D:\Program Files (x86)\i686-5.3.0-release-win32-dwarf-rt_v4-rev0\mingw32\bin";%PATH%
 REM Check if source file exists
 if not exist spcmd.c (
     echo Error: Source file spcmd.c not found
@@ -59,7 +60,8 @@ if exist spcmd.rc (
 
 REM Main compilation command with or without resources - Optimized for Windows XP compatibility
 REM Using -mwindows flag to create GUI application without console window
-gcc-xp -Wall -Wextra -std=c99 -m32 -mwindows -Os -D_WIN32_WINNT=0x0501 -DWINVER=0x0501 -D_WIN32_IE=0x0500 -s -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-ident -fdata-sections -ffunction-sections -Wl,--gc-sections -Wl,--strip-all spcmd.c ini.c %RESOBJ% -o spcmd.exe -lgdi32 -luser32 -lshell32 -lole32 -lshlwapi
+REM Added -static option to statically link all libraries, including msvCRT.dll, for Windows XP compatibility
+gcc-xp -Wall -Wextra -std=c99 -m32 -mwindows -Os -D_WIN32_WINNT=0x0501 -DWINVER=0x0501 -D_WIN32_IE=0x0500 -s -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-ident -fdata-sections -ffunction-sections -Wl,--gc-sections -Wl,--strip-all -static spcmd.c ini.c %RESOBJ% -o spcmd.exe -lgdi32 -luser32 -lshell32 -lole32 -lshlwapi
 
 REM Check if compilation was successful
 if %errorlevel% neq 0 (
@@ -93,8 +95,6 @@ if exist "D:\VM\VM_PATH\" (
 )
 echo.
 
-REM Ask if user wants to run functionality test
-echo.
 
 
 REM Clean up temporary resource file
