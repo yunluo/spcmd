@@ -162,7 +162,6 @@ typedef struct {
   BOOL bold;          // 是否粗体
 } WindowParams;
 
-
 // WinMain函数：GUI应用程序的入口点
 int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
                    LPSTR _lpCmdLine, int _nCmdShow) {
@@ -348,12 +347,10 @@ void cmd_screenshot(int argc, char *argv[]) {
   int quality = 100;                     // default quality
 
   // 使用统一的参数解析框架
-  ParamDefinition param_defs[] = {
-    {"save", NULL, FALSE, FALSE},
-    {"format", NULL, FALSE, FALSE},
-    {"base64", NULL, FALSE, FALSE},
-    {"quality", NULL, FALSE, FALSE}
-  };
+  ParamDefinition param_defs[] = {{"save", NULL, FALSE, FALSE},
+                                  {"format", NULL, FALSE, FALSE},
+                                  {"base64", NULL, FALSE, FALSE},
+                                  {"quality", NULL, FALSE, FALSE}};
 
   ParamContext *context = create_param_context(param_defs, 4);
   if (!context) {
@@ -449,8 +446,9 @@ void cmd_screenshot(int argc, char *argv[]) {
   else if (output_base64_to_console) {
     // Save bitmap to memory first with the specified format
     char temp_filename[MAX_PATH] = "temp_screenshot.png";
-    int result = save_bitmap_as_format(hBitmap, hScreenDC, temp_filename,
-                                       format, quality, TRUE); // 安静模式，不输出日志
+    int result =
+        save_bitmap_as_format(hBitmap, hScreenDC, temp_filename, format,
+                              quality, TRUE); // 安静模式，不输出日志
 
     if (result) {
       // Read the saved file and encode it to base64
@@ -542,7 +540,8 @@ void cmd_screenshot(int argc, char *argv[]) {
     }
 
     // Use the new helper function to save the bitmap
-    save_bitmap_as_format(hBitmap, hScreenDC, filename, format, quality, FALSE); // 正常模式，输出日志
+    save_bitmap_as_format(hBitmap, hScreenDC, filename, format, quality,
+                          FALSE); // 正常模式，输出日志
   }
 
   // Clean up resources
@@ -1200,11 +1199,11 @@ void cmd_restart(int argc, char *argv[]) {
   BOOL processStillRunning = TRUE;
   DWORD waitCount = 0;
   const DWORD maxWaitCount = 10; // 最多等待5秒
-  
+
   while (processStillRunning && waitCount < maxWaitCount) {
     Sleep(500); // 每次等待500毫秒
     waitCount++;
-    
+
     processStillRunning = FALSE;
     HANDLE hSnapshot2 = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (hSnapshot2 != INVALID_HANDLE_VALUE) {
@@ -1225,7 +1224,8 @@ void cmd_restart(int argc, char *argv[]) {
 
           if (_stricmp(procName2, processName) == 0) {
             processStillRunning = TRUE;
-            printf("Process still running, waiting... (%lu/%lu)\n", waitCount, maxWaitCount);
+            printf("Process still running, waiting... (%lu/%lu)\n", waitCount,
+                   maxWaitCount);
             break;
           }
         } while (Process32Next(hSnapshot2, &pe32_2));
@@ -1233,7 +1233,7 @@ void cmd_restart(int argc, char *argv[]) {
       CloseHandle(hSnapshot2);
     }
   }
-  
+
   if (processStillRunning) {
     printf("Warning: Some processes may still be running after timeout\n");
   } else {
@@ -1297,13 +1297,17 @@ void cmd_exec2(int argc, char *argv[]) {
   if (argc > 2 &&
       (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("Exec2 command help:\n");
-    printf("  spcmd exec2 --state=show/hide/min/max --workdir=path --exec=command\n\n");
+    printf("  spcmd exec2 --state=show/hide/min/max --workdir=path "
+           "--exec=command\n\n");
     printf("Parameter description:\n");
-    printf("  --state=state       - Window state (show/hide/min/max, required)\n");
+    printf(
+        "  --state=state       - Window state (show/hide/min/max, required)\n");
     printf("  --workdir=path      - Working directory (required)\n");
-    printf("  --exec=command      - Application with optional arguments (required)\n\n");
+    printf("  --exec=command      - Application with optional arguments "
+           "(required)\n\n");
     printf("Examples:\n");
-    printf("  spcmd exec2 --state=show --workdir=C:\\Windows --exec=notepad.exe\n");
+    printf("  spcmd exec2 --state=show --workdir=C:\\Windows "
+           "--exec=notepad.exe\n");
     printf("  spcmd exec2 --state=max --workdir=C:\\ --exec=cmd.exe /c dir\n");
     return;
   }
@@ -1344,7 +1348,8 @@ void cmd_exec2(int argc, char *argv[]) {
   // Check if required parameters are provided
   if (!hasState || !hasWorkdir || !hasExec) {
     printf("Error: Missing required parameters\n");
-    printf("Usage: spcmd exec2 --state=show/hide/min/max --workdir=path --exec=command\n");
+    printf("Usage: spcmd exec2 --state=show/hide/min/max --workdir=path "
+           "--exec=command\n");
     printf("Use 'spcmd exec2 --help' for more information\n");
     return;
   }
@@ -1376,10 +1381,8 @@ void cmd_exec2(int argc, char *argv[]) {
 
 void cmd_infoboxtop(int argc, char *argv[]) {
   // 使用统一的参数解析框架
-  ParamDefinition param_defs[] = {
-    {"message", NULL, TRUE, FALSE},
-    {"title", NULL, TRUE, FALSE}
-  };
+  ParamDefinition param_defs[] = {{"message", NULL, TRUE, FALSE},
+                                  {"title", NULL, TRUE, FALSE}};
 
   ParamContext *context = create_param_context(param_defs, 2);
   if (!context) {
@@ -1412,11 +1415,9 @@ void cmd_infoboxtop(int argc, char *argv[]) {
 
 void cmd_qboxtop(int argc, char *argv[]) {
   // 使用统一的参数解析框架
-  ParamDefinition param_defs[] = {
-    {"message", NULL, TRUE, FALSE},
-    {"title", NULL, TRUE, FALSE},
-    {"program", NULL, TRUE, FALSE}
-  };
+  ParamDefinition param_defs[] = {{"message", NULL, TRUE, FALSE},
+                                  {"title", NULL, TRUE, FALSE},
+                                  {"program", NULL, TRUE, FALSE}};
 
   ParamContext *context = create_param_context(param_defs, 3);
   if (!context) {
@@ -1453,8 +1454,8 @@ void cmd_qboxtop(int argc, char *argv[]) {
     ZeroMemory(&pi, sizeof(pi));
 
     // Start the program
-    if (CreateProcessA(NULL, (LPSTR)program, NULL, NULL, FALSE, 0, NULL, NULL, &si,
-                       &pi)) {
+    if (CreateProcessA(NULL, (LPSTR)program, NULL, NULL, FALSE, 0, NULL, NULL,
+                       &si, &pi)) {
       printf("Program '%s' started successfully\n", program);
       CloseHandle(pi.hProcess);
       CloseHandle(pi.hThread);
@@ -1497,7 +1498,7 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
     // 创建两个内存DC：一个用于原始图像，一个用于缩放后的图像
     HDC hSrcDC = CreateCompatibleDC(hScreenDC);
     HDC hDstDC = CreateCompatibleDC(hScreenDC);
-    
+
     hScaledBitmap = CreateCompatibleBitmap(hScreenDC, width, height);
     HBITMAP hOldSrcBitmap = (HBITMAP)SelectObject(hSrcDC, hBitmap);
     HBITMAP hOldDstBitmap = (HBITMAP)SelectObject(hDstDC, hScaledBitmap);
@@ -1511,7 +1512,7 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
     SelectObject(hSrcDC, hOldSrcBitmap);
     SelectObject(hDstDC, hOldDstBitmap);
     DeleteDC(hSrcDC);
-    
+
     hMemoryDC = hDstDC; // 保存目标DC用于后续GetDIBits调用
     hBitmapToSave = hScaledBitmap;
   } else {
@@ -1535,9 +1536,8 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
   char *lpbitmap = (char *)GlobalLock(hDIB);
 
   // 检查GetDIBits的返回值
-  int getDIBitsResult = 
-      GetDIBits(hMemoryDC, hBitmapToSave, 0,
-                (UINT)height, lpbitmap, (BITMAPINFO *)&bi, DIB_RGB_COLORS);
+  int getDIBitsResult = GetDIBits(hMemoryDC, hBitmapToSave, 0, (UINT)height,
+                                  lpbitmap, (BITMAPINFO *)&bi, DIB_RGB_COLORS);
 
   // 检查GetDIBits的返回值
   if (getDIBitsResult == 0 || (DWORD)getDIBitsResult == GDI_ERROR) {
@@ -1985,33 +1985,31 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
       }
     }
 
-
-
-    // 如果用户指定的字体不可用或未指定，尝试使用微软雅黑
+    // 如果用户指定的字体不可用或未指定，尝试使用微软雅黑（使用Unicode版本确保中文支持）
     if (!hFont) {
-      hFont = CreateFontA(params ? params->fontSize : 18, 0, 0, 0,
+      hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
                           params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
                           FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
                           CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-                          DEFAULT_PITCH | FF_SWISS, "微软雅黑");
+                          DEFAULT_PITCH | FF_SWISS, L"微软雅黑");
     }
 
     // 如果微软雅黑不可用，尝试使用宋体
     if (!hFont) {
-      hFont = CreateFontA(params ? params->fontSize : 18, 0, 0, 0,
+      hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
                           params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
                           FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
                           CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-                          DEFAULT_PITCH | FF_SWISS, "宋体");
+                          DEFAULT_PITCH | FF_SWISS, L"宋体");
     }
 
     // 如果宋体不可用，尝试使用黑体
     if (!hFont) {
-      hFont = CreateFontA(params ? params->fontSize : 18, 0, 0, 0,
+      hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
                           params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
                           FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
                           CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-                          DEFAULT_PITCH | FF_SWISS, "黑体");
+                          DEFAULT_PITCH | FF_SWISS, L"黑体");
     }
 
     // 如果以上字体都不可用，使用系统默认GUI字体
@@ -2070,7 +2068,6 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     HBRUSH hBrush = CreateSolidBrush(params->bgColor);
     HPEN hPen = CreatePen(PS_SOLID, 1, params->bgColor);
 
-
     // 选择画笔和画刷到设备上下文
     HGDIOBJ oldBrush = SelectObject(hdc, hBrush);
     HGDIOBJ oldPen = SelectObject(hdc, hPen);
@@ -2105,21 +2102,34 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
 
     // 计算文本实际占用的矩形区域
     RECT calcRect = textRect;
-    DrawTextA(hdc, displayText, -1, &calcRect,
-              DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL | DT_CALCRECT);
 
-    // 调整垂直位置以实现居中
-    int textHeight = calcRect.bottom - calcRect.top;
-    int availableHeight = textRect.bottom - textRect.top;
-    if (textHeight < availableHeight) {
-      int offset = (availableHeight - textHeight) / 2;
-      textRect.top += offset;
-      textRect.bottom = textRect.top + textHeight;
+    // 将ANSI文本转换为宽字符以支持中文显示
+    int wideCharLen = MultiByteToWideChar(CP_ACP, 0, displayText, -1, NULL, 0);
+    wchar_t *wideDisplayText = (wchar_t *)malloc(wideCharLen * sizeof(wchar_t));
+    if (wideDisplayText) {
+      MultiByteToWideChar(CP_ACP, 0, displayText, -1, wideDisplayText,
+                          wideCharLen);
+
+      // 使用Unicode版本的DrawTextW来计算文本区域
+      DrawTextW(hdc, wideDisplayText, -1, &calcRect,
+                DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL | DT_CALCRECT);
+
+      // 调整垂直位置以实现居中
+      int textHeight = calcRect.bottom - calcRect.top;
+      int availableHeight = textRect.bottom - textRect.top;
+      if (textHeight < availableHeight) {
+        int offset = (availableHeight - textHeight) / 2;
+        textRect.top += offset;
+        textRect.bottom = textRect.top + textHeight;
+      }
+
+      // 使用Unicode版本的DrawTextW来绘制文本
+      DrawTextW(hdc, wideDisplayText, -1, &textRect,
+                DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL);
+
+      // 释放宽字符内存
+      free(wideDisplayText);
     }
-
-    // 绘制文本
-    DrawTextA(hdc, displayText, -1, &textRect,
-              DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL);
 
     EndPaint(hwnd, &ps);
     break;
@@ -2167,9 +2177,6 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
   case WM_NCHITTEST: {
     // 如果禁止拖拽，阻止窗口移动
     if (params && params->noDrag) {
-      // 调试输出
-      // printf("Debug: Blocking drag, returning HTCLIENT\n");
-      // 直接返回HTCLIENT，阻止标题栏拖拽
       return HTCLIENT;
     }
     return DefWindowProc(hwnd, msg, wParam, lParam);
@@ -2187,8 +2194,6 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
       DeleteObject(hFont);
       hFont = NULL;
     }
-
-
 
     // 清理定时器
     if (flashTimerActive) {
@@ -2374,12 +2379,12 @@ void cmd_window(int argc, char *argv[]) {
                          : // 禁止拖拽时使用弹出窗口样式
                       (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU |
                        WS_VISIBLE), // 正常情况显示标题栏
-                  x, y, width, height, NULL, NULL,
-                  GetModuleHandle(NULL), params);
+                  x, y, width, height, NULL, NULL, GetModuleHandle(NULL),
+                  params);
 
   // 消息循环
   MSG msg;
-  while (GetMessage(&msg, NULL, 0, 0)) {  // 修复：将NULL改为hwnd
+  while (GetMessage(&msg, NULL, 0, 0)) { // 修复：将NULL改为hwnd
     if (msg.message == WM_QUIT) {
       break;
     }
@@ -2558,6 +2563,16 @@ void cmd_notify(int argc, char *argv[]) {
   BOOL isWindowsXP = (osvi.dwMajorVersion == 5 &&
                       osvi.dwMinorVersion == 1); // Windows XP是5.1版本
 
+  // 为Unicode转换分配内存
+  int title_len = MultiByteToWideChar(CP_ACP, 0, title, -1, NULL, 0);
+  int message_len = MultiByteToWideChar(CP_ACP, 0, message, -1, NULL, 0);
+  WCHAR *wtitle = (WCHAR *)malloc(title_len * sizeof(WCHAR));
+  WCHAR *wmessage = (WCHAR *)malloc(message_len * sizeof(WCHAR));
+
+  // 转换为宽字符
+  MultiByteToWideChar(CP_ACP, 0, title, -1, wtitle, title_len);
+  MultiByteToWideChar(CP_ACP, 0, message, -1, wmessage, message_len);
+
   if (isWindowsXP) {
     // Windows XP兼容实现 - 使用MessageBox
     printf("Using Windows XP compatible mode\n");
@@ -2572,8 +2587,8 @@ void cmd_notify(int argc, char *argv[]) {
       mbType |= MB_ICONINFORMATION;
     }
 
-    // 显示消息框
-    MessageBoxA(NULL, message, title, mbType);
+    // 显示消息框 - 使用Unicode版本
+    MessageBoxW(NULL, wmessage, wtitle, mbType);
 
     // 注意：在XP系统上，MessageBox是模态的，无法实现超时自动关闭
     // 用户需要手动点击确定按钮
@@ -2583,22 +2598,22 @@ void cmd_notify(int argc, char *argv[]) {
     // Windows 7/10/11实现 - 使用Shell_NotifyIcon
     printf("Using modern Windows notification\n");
 
-    // 注册窗口类
-    WNDCLASSA wc = {0};
-    wc.lpfnWndProc = DefWindowProc;
+    // 注册窗口类 - 使用Unicode版本
+    WNDCLASSW wc = {0};
+    wc.lpfnWndProc = DefWindowProcW;
     wc.hInstance = GetModuleHandle(NULL);
-    wc.lpszClassName = "NotifyWindowClass";
+    wc.lpszClassName = L"NotifyWindowClass";
 
-    if (RegisterClassA(&wc)) {
-      // 创建隐藏窗口
+    if (RegisterClassW(&wc)) {
+      // 创建隐藏窗口 - 使用Unicode版本
       HWND hwnd =
-          CreateWindowExA(0, "NotifyWindowClass", "NotifyWindow", 0, 0, 0, 0, 0,
-                          NULL, NULL, GetModuleHandle(NULL), NULL);
+          CreateWindowExW(0, L"NotifyWindowClass", L"NotifyWindow", 0, 0, 0, 0,
+                          0, NULL, NULL, GetModuleHandle(NULL), NULL);
 
       if (hwnd) {
-        // 初始化NOTIFYICONDATA结构
-        NOTIFYICONDATAA nid = {0};
-        nid.cbSize = sizeof(NOTIFYICONDATAA);
+        // 初始化NOTIFYICONDATA结构 - 使用Unicode版本
+        NOTIFYICONDATAW nid = {0};
+        nid.cbSize = sizeof(NOTIFYICONDATAW);
         nid.hWnd = hwnd;
         nid.uID = 1;
         nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
@@ -2613,19 +2628,17 @@ void cmd_notify(int argc, char *argv[]) {
           nid.hIcon = LoadIcon(NULL, IDI_INFORMATION);
         }
 
-        // 设置提示文本
-        strncpy(nid.szTip, title, sizeof(nid.szTip) - 1);
-        nid.szTip[sizeof(nid.szTip) - 1] = '\0';
+        // 设置提示文本 - 使用宽字符
+        wcsncpy_s(nid.szTip, ARRAYSIZE(nid.szTip), wtitle, _TRUNCATE);
 
-        // 添加通知图标
-        Shell_NotifyIconA(NIM_ADD, &nid);
+        // 添加通知图标 - 使用Unicode版本
+        Shell_NotifyIconW(NIM_ADD, &nid);
 
         // 更新通知内容
         nid.uFlags = NIF_INFO;
-        strncpy(nid.szInfoTitle, title, sizeof(nid.szInfoTitle) - 1);
-        nid.szInfoTitle[sizeof(nid.szInfoTitle) - 1] = '\0';
-        strncpy(nid.szInfo, message, sizeof(nid.szInfo) - 1);
-        nid.szInfo[sizeof(nid.szInfo) - 1] = '\0';
+        wcsncpy_s(nid.szInfoTitle, ARRAYSIZE(nid.szInfoTitle), wtitle,
+                  _TRUNCATE);
+        wcsncpy_s(nid.szInfo, ARRAYSIZE(nid.szInfo), wmessage, _TRUNCATE);
 
         // 设置信息标志
         if (strcmp(iconType, "warning") == 0) {
@@ -2636,21 +2649,21 @@ void cmd_notify(int argc, char *argv[]) {
           nid.dwInfoFlags = NIIF_INFO;
         }
 
-        // 显示通知
-        Shell_NotifyIconA(NIM_MODIFY, &nid);
+        // 显示通知 - 使用Unicode版本
+        Shell_NotifyIconW(NIM_MODIFY, &nid);
 
         // 等待指定时间
         Sleep(timeout * 1000);
 
-        // 删除通知图标
-        Shell_NotifyIconA(NIM_DELETE, &nid);
+        // 删除通知图标 - 使用Unicode版本
+        Shell_NotifyIconW(NIM_DELETE, &nid);
 
         // 销毁窗口
         DestroyWindow(hwnd);
       }
 
-      // 注销窗口类
-      UnregisterClassA("NotifyWindowClass", GetModuleHandle(NULL));
+      // 注销窗口类 - 使用Unicode版本
+      UnregisterClassW(L"NotifyWindowClass", GetModuleHandle(NULL));
     } else {
       // 如果无法注册窗口类，回退到MessageBox
       printf("Falling back to MessageBox\n");
@@ -2662,12 +2675,14 @@ void cmd_notify(int argc, char *argv[]) {
       } else {
         mbType |= MB_ICONINFORMATION;
       }
-      MessageBoxA(NULL, message, title, mbType);
+      // 使用Unicode版本
+      MessageBoxW(NULL, wmessage, wtitle, mbType);
     }
   }
 
-  printf("Notification displayed successfully\n");
-
+  // 释放分配的内存
+  free(wtitle);
+  free(wmessage);
   // 释放参数上下文
   free_param_context(context);
 }
@@ -2685,9 +2700,7 @@ struct IniData {
   struct IniEntry *tail;
 };
 
-// 保留config_ini_handler以兼容ini库
-
-// INI解析回调函数 (保持兼容性)
+// INI解析回调函数
 static int config_ini_handler(void *user, const char *section, const char *name,
                               const char *value) {
   struct IniData *data = (struct IniData *)user;
@@ -2976,7 +2989,7 @@ int cmd_process(int argc, char *argv[]) {
   char action[20] = "check"; // default action
   char processName[MAX_PATH] = {0};
   DWORD processId = 0;
-  
+
   // Parameters for run action
   char workingFolder[MAX_PATH] = {0};
   char commandLine[MAX_PATH * 2] = {0};
@@ -3006,7 +3019,7 @@ int cmd_process(int argc, char *argv[]) {
       printf("Error: --exec parameter is required for run action\n");
       return 1;
     }
-    
+
     // Run the application with specified working folder
     STARTUPINFO si;
     PROCESS_INFORMATION pi;
@@ -3218,7 +3231,7 @@ void generate_uuid_v7(char *uuid_str) {
   uint32_t ts_high = (timestamp >> 16) & 0xFFFFFFFF;
 
   // 时间戳低位（16位）+ 随机数高位（12位）
-  uint32_t ts_low_rand = 
+  uint32_t ts_low_rand =
       ((timestamp & 0xFFFF) << 12) | ((rand_a >> 20) & 0xFFF);
 
   // 随机数中位（16位），设置版本为0111（v7）
@@ -3231,8 +3244,7 @@ void generate_uuid_v7(char *uuid_str) {
 
   // 格式化为UUID字符串
   // UUID格式：8-4-4-4-12
-  sprintf(uuid_str, "%08x-%04x-%04x-%04x-%04x%08x", 
-          ts_high,
+  sprintf(uuid_str, "%08x-%04x-%04x-%04x-%04x%08x", ts_high,
           (ts_low_rand >> 16) & 0xFFFF, // 时间戳低位和随机数高位的高16位
           ts_low_rand & 0xFFFF,         // 时间戳低位和随机数高位的低16位
           rand_mid,                     // 版本字段
@@ -3268,7 +3280,7 @@ uint64_t generate_snowflake_id(snowflake_generator *sf) {
       Sleep(1); // 等待1毫秒
       timestamp = get_current_timestamp_ms();
       wait_count++;
-      
+
       // 如果等待超过100毫秒，使用当前时间戳并增加序列号
       if (wait_count > 100) {
         timestamp = sf->last_timestamp;
@@ -3365,11 +3377,9 @@ void cmd_logrotate(int argc, char *argv[]) {
   // Rotates log files based on size or daily schedule.
 
   // 使用新的参数解析框架
-  ParamDefinition param_defs[] = {
-    {"path", NULL, FALSE, FALSE},
-    {"maxsize", NULL, FALSE, FALSE},
-    {"daily", NULL, FALSE, FALSE}
-  };
+  ParamDefinition param_defs[] = {{"path", NULL, FALSE, FALSE},
+                                  {"maxsize", NULL, FALSE, FALSE},
+                                  {"daily", NULL, FALSE, FALSE}};
 
   // Create parameter context
   ParamContext *context = create_param_context(param_defs, 3);
@@ -3540,9 +3550,9 @@ typedef struct {
   char process_name[MAX_PATH]; // 增加大小以支持完整路径
   char icon_path[MAX_PATH];    // 增加大小以支持完整路径
   BOOL process_running;
-  HICON hIcon; // 存储加载的图标
+  HICON hIcon;                // 存储加载的图标
   MenuCommand *menu_commands; // 存储菜单命令的数组
-  int menu_command_count; // 菜单命令的数量
+  int menu_command_count;     // 菜单命令的数量
 } TrayIconData;
 
 // 浮动图标相关的常量定义
@@ -3556,18 +3566,19 @@ typedef struct {
   char process_name[MAX_PATH]; // 要监控的进程名
   char icon_path[MAX_PATH];    // 图标路径
   BOOL process_running;
-  HICON hIcon; // 存储加载的图标
+  HICON hIcon;                // 存储加载的图标
   MenuCommand *menu_commands; // 存储菜单命令的数组
-  int menu_command_count; // 菜单命令的数量
-  POINT drag_start; // 拖动开始位置
-  BOOL is_dragging; // 是否正在拖动
+  int menu_command_count;     // 菜单命令的数量
+  POINT drag_start;           // 拖动开始位置
+  BOOL is_dragging;           // 是否正在拖动
 } FloatingIconData;
 
 // 托盘图标窗口过程函数声明
 LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 // 浮动图标窗口过程函数声明
-LRESULT CALLBACK FloatingWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK FloatingWndProc(HWND hwnd, UINT msg, WPARAM wParam,
+                                 LPARAM lParam);
 
 // 检查进程是否运行的函数
 BOOL is_process_running(const char *processName) {
@@ -3753,17 +3764,18 @@ BOOL create_tray_icon(TrayIconData *trayData, HINSTANCE hInstance,
 
   // 创建右键菜单
   trayData->hMenu = CreatePopupMenu();
-  
+
   // 添加自定义菜单项
   for (int i = 0; i < menu_command_count; i++) {
-    AppendMenu(trayData->hMenu, MF_STRING, ID_TRAY_ABOUT + 1 + i, menu_commands[i].name);
+    AppendMenu(trayData->hMenu, MF_STRING, ID_TRAY_ABOUT + 1 + i,
+               menu_commands[i].name);
   }
-  
+
   // 添加分隔线
   if (menu_command_count > 0) {
     AppendMenu(trayData->hMenu, MF_SEPARATOR, 0, NULL);
   }
-  
+
   // 添加About菜单项
   AppendMenu(trayData->hMenu, MF_STRING, ID_TRAY_ABOUT, "About");
 
@@ -3831,22 +3843,23 @@ LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT msg, WPARAM wParam,
       MessageBox(hwnd, "SPCMD System Tray Icon\nMonitoring process status",
                  "About", MB_OK | MB_ICONINFORMATION);
       break;
-      
-    default:
-    {
+
+    default: {
       // 处理自定义菜单项
       int menu_id = LOWORD(wParam);
       int custom_menu_index = menu_id - (ID_TRAY_ABOUT + 1);
-      if (custom_menu_index >= 0 && custom_menu_index < trayData->menu_command_count) {
+      if (custom_menu_index >= 0 &&
+          custom_menu_index < trayData->menu_command_count) {
         // 执行对应的命令
         char *command = trayData->menu_commands[custom_menu_index].command;
         if (strlen(command) > 0) {
           STARTUPINFO si = {0};
           PROCESS_INFORMATION pi = {0};
           si.cb = sizeof(si);
-          
-          CreateProcess(NULL, command, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
-          
+
+          CreateProcess(NULL, command, NULL, NULL, FALSE, 0, NULL, NULL, &si,
+                        &pi);
+
           // 关闭进程和线程句柄
           CloseHandle(pi.hProcess);
           CloseHandle(pi.hThread);
@@ -3876,153 +3889,149 @@ LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT msg, WPARAM wParam,
 }
 
 // 浮动图标窗口过程函数
-LRESULT CALLBACK FloatingWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-  FloatingIconData *floatingData = 
+LRESULT CALLBACK FloatingWndProc(HWND hwnd, UINT msg, WPARAM wParam,
+                                 LPARAM lParam) {
+  FloatingIconData *floatingData =
       (FloatingIconData *)GetWindowLongPtr(hwnd, GWLP_USERDATA);
 
   switch (msg) {
-  case WM_CREATE:
-  {
+  case WM_CREATE: {
     // 获取传递的参数
     CREATESTRUCT *pcs = (CREATESTRUCT *)lParam;
     floatingData = (FloatingIconData *)pcs->lpCreateParams;
     SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)floatingData);
     floatingData->hwnd = hwnd;
     floatingData->is_dragging = FALSE;
-    
+
     // 加载图标
-    if (strlen(floatingData->icon_path) > 0 && PathFileExistsA(floatingData->icon_path)) {
+    if (strlen(floatingData->icon_path) > 0 &&
+        PathFileExistsA(floatingData->icon_path)) {
       floatingData->hIcon = extract_icon_from_exe(floatingData->icon_path);
     } else {
       floatingData->hIcon = LoadIcon(NULL, IDI_INFORMATION);
     }
-    
+
     // 设置窗口图标
     SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)floatingData->hIcon);
     SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)floatingData->hIcon);
-    
+
     // 创建右键菜单
     floatingData->hMenu = CreatePopupMenu();
-    
+
     // 添加自定义菜单项
     for (int i = 0; i < floatingData->menu_command_count; i++) {
-      AppendMenu(floatingData->hMenu, MF_STRING, ID_FLOATING_ABOUT + 1 + i, 
+      AppendMenu(floatingData->hMenu, MF_STRING, ID_FLOATING_ABOUT + 1 + i,
                  floatingData->menu_commands[i].name);
     }
-    
+
     // 添加分隔线
     if (floatingData->menu_command_count > 0) {
       AppendMenu(floatingData->hMenu, MF_SEPARATOR, 0, NULL);
     }
-    
+
     // 添加About菜单项
     AppendMenu(floatingData->hMenu, MF_STRING, ID_FLOATING_ABOUT, "About");
-    
+
     // 设置定时器，每1秒更新一次状态
     SetTimer(hwnd, 1, 1000, NULL);
-    
+
     break;
   }
-  
-  case WM_PAINT:
-  {
+
+  case WM_PAINT: {
     PAINTSTRUCT ps;
     HDC hdc = BeginPaint(hwnd, &ps);
-    
+
     // 获取客户区大小
     RECT rect;
     GetClientRect(hwnd, &rect);
-    
+
     // 绘制图标
     if (floatingData->hIcon) {
       DrawIcon(hdc, 0, 0, floatingData->hIcon);
     }
-    
+
     EndPaint(hwnd, &ps);
     break;
   }
-  
-  case WM_LBUTTONDOWN:
-  {
+
+  case WM_LBUTTONDOWN: {
     // 开始拖动
     floatingData->is_dragging = TRUE;
-    
+
     // 保存鼠标相对于窗口的初始位置
     floatingData->drag_start.x = LOWORD(lParam);
     floatingData->drag_start.y = HIWORD(lParam);
-    
+
     SetCapture(hwnd);
     break;
   }
-  
-  case WM_MOUSEMOVE:
-  {
+
+  case WM_MOUSEMOVE: {
     if (floatingData->is_dragging) {
       // 获取鼠标当前的屏幕坐标
       POINT cursor_pos;
       GetCursorPos(&cursor_pos);
-      
+
       // 获取窗口当前位置和大小
       RECT window_rect;
       GetWindowRect(hwnd, &window_rect);
-      
+
       // 计算新的窗口位置（鼠标位置减去初始偏移量）
       int new_x = cursor_pos.x - floatingData->drag_start.x;
       int new_y = cursor_pos.y - floatingData->drag_start.y;
-      
+
       // 移动窗口
-      MoveWindow(hwnd, new_x, new_y, window_rect.right - window_rect.left, 
-                window_rect.bottom - window_rect.top, TRUE);
+      MoveWindow(hwnd, new_x, new_y, window_rect.right - window_rect.left,
+                 window_rect.bottom - window_rect.top, TRUE);
     }
     break;
   }
-  
-  case WM_LBUTTONUP:
-  {
+
+  case WM_LBUTTONUP: {
     // 结束拖动
     floatingData->is_dragging = FALSE;
     ReleaseCapture();
     break;
   }
-  
-  case WM_RBUTTONDOWN:
-  {
+
+  case WM_RBUTTONDOWN: {
     // 右键点击显示菜单
     POINT curPoint;
     GetCursorPos(&curPoint);
-    
+
     // 设置菜单前景窗口以确保菜单正确消失
     SetForegroundWindow(hwnd);
-    
+
     // 显示上下文菜单
-    TrackPopupMenu(floatingData->hMenu, TPM_RIGHTBUTTON, curPoint.x, curPoint.y, 
+    TrackPopupMenu(floatingData->hMenu, TPM_RIGHTBUTTON, curPoint.x, curPoint.y,
                    0, hwnd, NULL);
     break;
   }
-  
-  case WM_COMMAND:
-  {
+
+  case WM_COMMAND: {
     switch (LOWORD(wParam)) {
     case ID_FLOATING_ABOUT:
-      MessageBox(hwnd, "SPCMD Floating Icon\nMonitoring process status", 
+      MessageBox(hwnd, "SPCMD Floating Icon\nMonitoring process status",
                  "About", MB_OK | MB_ICONINFORMATION);
       break;
-      
-    default:
-    {
+
+    default: {
       // 处理自定义菜单项
       int menu_id = LOWORD(wParam);
       int custom_menu_index = menu_id - (ID_FLOATING_ABOUT + 1);
-      if (custom_menu_index >= 0 && custom_menu_index < floatingData->menu_command_count) {
+      if (custom_menu_index >= 0 &&
+          custom_menu_index < floatingData->menu_command_count) {
         // 执行对应的命令
         char *command = floatingData->menu_commands[custom_menu_index].command;
         if (strlen(command) > 0) {
           STARTUPINFO si = {0};
           PROCESS_INFORMATION pi = {0};
           si.cb = sizeof(si);
-          
-          CreateProcess(NULL, command, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
-          
+
+          CreateProcess(NULL, command, NULL, NULL, FALSE, 0, NULL, NULL, &si,
+                        &pi);
+
           // 关闭进程和线程句柄
           CloseHandle(pi.hProcess);
           CloseHandle(pi.hThread);
@@ -4033,29 +4042,28 @@ LRESULT CALLBACK FloatingWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
     }
     break;
   }
-  
-  case WM_TIMER:
-  {
+
+  case WM_TIMER: {
     // 定时更新进程状态
-    floatingData->process_running = is_process_running(floatingData->process_name);
+    floatingData->process_running =
+        is_process_running(floatingData->process_name);
     if (!floatingData->process_running) {
       // 进程未运行，退出程序
       PostMessage(hwnd, WM_DESTROY, 0, 0);
     }
     break;
   }
-  
-  case WM_DESTROY:
-  {
+
+  case WM_DESTROY: {
     // 清理资源
     KillTimer(hwnd, 1);
-    
+
     // 销毁菜单
     if (floatingData->hMenu) {
       DestroyMenu(floatingData->hMenu);
       floatingData->hMenu = NULL;
     }
-    
+
     // 销毁图标
     if (floatingData->hIcon != NULL &&
         floatingData->hIcon != LoadIcon(NULL, IDI_APPLICATION) &&
@@ -4064,15 +4072,15 @@ LRESULT CALLBACK FloatingWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
       DestroyIcon(floatingData->hIcon);
       floatingData->hIcon = NULL;
     }
-    
+
     PostQuitMessage(0);
     break;
   }
-  
+
   default:
     return DefWindowProc(hwnd, msg, wParam, lParam);
   }
-  
+
   return 0;
 }
 
@@ -4132,51 +4140,59 @@ void cmd_tray(int argc, char *argv[]) {
   // 处理menu参数
   MenuCommand *menu_commands = NULL;
   int menu_command_count = 0;
-  
+
   // 使用新的参数解析框架处理menu参数
   ParamDefinition param_defs[] = {
-    {"menu", NULL, FALSE, TRUE}        // 菜单命令，支持多个，格式：name,command
+      {"menu", NULL, FALSE, TRUE} // 菜单命令，支持多个，格式：name,command
   };
 
   ParamContext *context = create_param_context(param_defs, 1);
   if (context) {
     // 解析参数
     parse_parameters(context, argc, argv, 2);
-    
+
     // 获取所有menu参数值
     for (int i = 0; i < context->param_count; i++) {
-      if (strcmp(context->params[i].name, "menu") == 0 && context->params[i].value) {
+      if (strcmp(context->params[i].name, "menu") == 0 &&
+          context->params[i].value) {
         menu_command_count++;
       }
     }
-    
+
     if (menu_command_count > 0) {
-      menu_commands = (MenuCommand *)malloc(sizeof(MenuCommand) * menu_command_count);
+      menu_commands =
+          (MenuCommand *)malloc(sizeof(MenuCommand) * menu_command_count);
       if (menu_commands) {
         // 解析menu参数
         int current_index = 0;
         for (int i = 0; i < context->param_count; i++) {
-          if (strcmp(context->params[i].name, "menu") == 0 && context->params[i].value) {
+          if (strcmp(context->params[i].name, "menu") == 0 &&
+              context->params[i].value) {
             char *menu_value = context->params[i].value;
             char *comma_pos = strchr(menu_value, ',');
             if (comma_pos) {
               // 分离菜单项名称和命令
               *comma_pos = '\0';
-              strncpy(menu_commands[current_index].name, menu_value, sizeof(menu_commands[current_index].name) - 1);
-              menu_commands[current_index].name[sizeof(menu_commands[current_index].name) - 1] = '\0';
-              strncpy(menu_commands[current_index].command, comma_pos + 1, sizeof(menu_commands[current_index].command) - 1);
-              menu_commands[current_index].command[sizeof(menu_commands[current_index].command) - 1] = '\0';
+              strncpy(menu_commands[current_index].name, menu_value,
+                      sizeof(menu_commands[current_index].name) - 1);
+              menu_commands[current_index]
+                  .name[sizeof(menu_commands[current_index].name) - 1] = '\0';
+              strncpy(menu_commands[current_index].command, comma_pos + 1,
+                      sizeof(menu_commands[current_index].command) - 1);
+              menu_commands[current_index]
+                  .command[sizeof(menu_commands[current_index].command) - 1] =
+                  '\0';
               current_index++;
             }
           }
         }
       }
     }
-    
+
     // 释放参数上下文
     free_param_context(context);
   }
-  
+
   // 检查进程是否正在运行
   if (!is_process_running(process_name)) {
     printf("Process '%s' is not running. Tray icon will not be displayed.\n",
@@ -4218,7 +4234,7 @@ void cmd_tray(int argc, char *argv[]) {
   KillTimer(trayData.hwnd, 1);
   destroy_tray_icon(&trayData);
   CoUninitialize();
-  
+
   // 释放菜单命令内存
   if (menu_commands) {
     free(menu_commands);
@@ -4231,9 +4247,9 @@ void cmd_tray(int argc, char *argv[]) {
 
 // 创建浮动图标
 BOOL create_floating_icon(FloatingIconData *floatingData, HINSTANCE hInstance,
-                         const char *title, const char *processName,
-                         const char *iconPath, MenuCommand *menu_commands,
-                         int menu_command_count) {
+                          const char *title, const char *processName,
+                          const char *iconPath, MenuCommand *menu_commands,
+                          int menu_command_count) {
   // 注册窗口类
   WNDCLASS wc = {0};
   wc.lpfnWndProc = FloatingWndProc;
@@ -4248,57 +4264,59 @@ BOOL create_floating_icon(FloatingIconData *floatingData, HINSTANCE hInstance,
   }
 
   // 保存进程名和图标路径
-  strncpy(floatingData->process_name, processName, sizeof(floatingData->process_name) - 1);
+  strncpy(floatingData->process_name, processName,
+          sizeof(floatingData->process_name) - 1);
   floatingData->process_name[sizeof(floatingData->process_name) - 1] = '\0';
-  
-  strncpy(floatingData->icon_path, iconPath, sizeof(floatingData->icon_path) - 1);
+
+  strncpy(floatingData->icon_path, iconPath,
+          sizeof(floatingData->icon_path) - 1);
   floatingData->icon_path[sizeof(floatingData->icon_path) - 1] = '\0';
-  
+
   // 保存菜单命令
   floatingData->menu_commands = menu_commands;
   floatingData->menu_command_count = menu_command_count;
-  
+
   // 检查进程是否正在运行
   floatingData->process_running = is_process_running(processName);
   if (!floatingData->process_running) {
     return FALSE;
   }
-  
+
   // 计算窗口大小（基于图标大小）
-  int icon_size = GetSystemMetrics(SM_CXICON);  // 使用大图标大小（通常32x32）
-  int window_width = icon_size;  // 图标大小 + 边距
+  int icon_size = GetSystemMetrics(SM_CXICON); // 使用大图标大小（通常32x32）
+  int window_width = icon_size;                // 图标大小 + 边距
   int window_height = icon_size;
-  
+
   // 计算窗口位置（屏幕居中）
   int screen_width = GetSystemMetrics(SM_CXSCREEN);
   int screen_height = GetSystemMetrics(SM_CYSCREEN);
-  int x = (screen_width - window_width) / 2;  // 水平居中
-  int y = (screen_height - window_height) / 2;  // 垂直居中
-  
+  int x = (screen_width - window_width) / 2;   // 水平居中
+  int y = (screen_height - window_height) / 2; // 垂直居中
+
   // 创建浮动窗口
   HWND hwnd = CreateWindowEx(
-      WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TOOLWINDOW,  // 顶层、分层、工具窗口（不在任务栏显示）
-      "SPCMDFloatingIconClass",
-      title,
-      WS_POPUP | WS_VISIBLE,  // 弹出窗口，可见
-      x, y, window_width, window_height,
-      NULL, NULL, hInstance, floatingData);
-  
+      WS_EX_TOPMOST | WS_EX_LAYERED |
+          WS_EX_TOOLWINDOW, // 顶层、分层、工具窗口（不在任务栏显示）
+      "SPCMDFloatingIconClass", title,
+      WS_POPUP | WS_VISIBLE, // 弹出窗口，可见
+      x, y, window_width, window_height, NULL, NULL, hInstance, floatingData);
+
   if (!hwnd) {
     UnregisterClass("SPCMDFloatingIconClass", hInstance);
     return FALSE;
   }
-  
+
   // 设置窗口透明度
   SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
-  
+
   return TRUE;
 }
 
 // 更新浮动图标状态
 void update_floating_icon(FloatingIconData *floatingData) {
   // 检查进程状态
-  floatingData->process_running = is_process_running(floatingData->process_name);
+  floatingData->process_running =
+      is_process_running(floatingData->process_name);
   if (!floatingData->process_running) {
     // 进程未运行，发送退出消息
     PostMessage(floatingData->hwnd, WM_DESTROY, 0, 0);
@@ -4312,7 +4330,7 @@ void destroy_floating_icon(FloatingIconData *floatingData) {
     DestroyMenu(floatingData->hMenu);
     floatingData->hMenu = NULL;
   }
-  
+
   // 销毁图标
   if (floatingData->hIcon != NULL &&
       floatingData->hIcon != LoadIcon(NULL, IDI_APPLICATION) &&
@@ -4321,13 +4339,13 @@ void destroy_floating_icon(FloatingIconData *floatingData) {
     DestroyIcon(floatingData->hIcon);
     floatingData->hIcon = NULL;
   }
-  
+
   // 销毁窗口
   if (floatingData->hwnd) {
     DestroyWindow(floatingData->hwnd);
     floatingData->hwnd = NULL;
   }
-  
+
   // 注销窗口类
   UnregisterClass("SPCMDFloatingIconClass", GetModuleHandle(NULL));
 }
@@ -4337,11 +4355,11 @@ void cmd_floating(int argc, char *argv[]) {
 
   // 使用新的参数解析框架
   ParamDefinition param_defs[] = {
-    {"process", NULL, FALSE, FALSE},  // 要监控的进程名
-    {"title", NULL, FALSE, FALSE},     // 浮动图标的标题
-    {"path", NULL, FALSE, FALSE},      // 进程路径，用于自动检测进程名和图标路径
-    {"icon", NULL, FALSE, FALSE},      // 图标路径
-    {"menu", NULL, FALSE, TRUE}        // 菜单命令，支持多个，格式：name,command
+      {"process", NULL, FALSE, FALSE}, // 要监控的进程名
+      {"title", NULL, FALSE, FALSE},   // 浮动图标的标题
+      {"path", NULL, FALSE, FALSE},    // 进程路径，用于自动检测进程名和图标路径
+      {"icon", NULL, FALSE, FALSE},    // 图标路径
+      {"menu", NULL, FALSE, TRUE}      // 菜单命令，支持多个，格式：name,command
   };
 
   ParamContext *context = create_param_context(param_defs, 5);
@@ -4355,7 +4373,7 @@ void cmd_floating(int argc, char *argv[]) {
 
   // 获取参数值，使用默认值
   char process_name[MAX_PATH] = "python.exe"; // default process name
-  char title[MAX_PATH] = "SPCMD Floating";   // default title
+  char title[MAX_PATH] = "SPCMD Floating";    // default title
   char icon_path[MAX_PATH] = "";    // default icon path (use system default)
   char process_path[MAX_PATH] = ""; // process path for auto detection
 
@@ -4403,35 +4421,42 @@ void cmd_floating(int argc, char *argv[]) {
   // 处理menu参数
   MenuCommand *menu_commands = NULL;
   int menu_command_count = 0;
-  
+
   // 获取所有menu参数值
   for (int i = 0; i < context->param_count; i++) {
-    if (strcmp(context->params[i].name, "menu") == 0 && context->params[i].value) {
+    if (strcmp(context->params[i].name, "menu") == 0 &&
+        context->params[i].value) {
       menu_command_count++;
     }
   }
-  
+
   if (menu_command_count > 0) {
-    menu_commands = (MenuCommand *)malloc(sizeof(MenuCommand) * menu_command_count);
+    menu_commands =
+        (MenuCommand *)malloc(sizeof(MenuCommand) * menu_command_count);
     if (!menu_commands) {
       printf("Error: Memory allocation failed for menu commands\n");
       free_param_context(context);
       return;
     }
-    
+
     // 解析menu参数
     int current_index = 0;
     for (int i = 0; i < context->param_count; i++) {
-      if (strcmp(context->params[i].name, "menu") == 0 && context->params[i].value) {
+      if (strcmp(context->params[i].name, "menu") == 0 &&
+          context->params[i].value) {
         char *menu_value = context->params[i].value;
         char *comma_pos = strchr(menu_value, ',');
         if (comma_pos) {
           // 分离菜单项名称和命令
           *comma_pos = '\0';
-          strncpy(menu_commands[current_index].name, menu_value, sizeof(menu_commands[current_index].name) - 1);
-          menu_commands[current_index].name[sizeof(menu_commands[current_index].name) - 1] = '\0';
-          strncpy(menu_commands[current_index].command, comma_pos + 1, sizeof(menu_commands[current_index].command) - 1);
-          menu_commands[current_index].command[sizeof(menu_commands[current_index].command) - 1] = '\0';
+          strncpy(menu_commands[current_index].name, menu_value,
+                  sizeof(menu_commands[current_index].name) - 1);
+          menu_commands[current_index]
+              .name[sizeof(menu_commands[current_index].name) - 1] = '\0';
+          strncpy(menu_commands[current_index].command, comma_pos + 1,
+                  sizeof(menu_commands[current_index].command) - 1);
+          menu_commands[current_index]
+              .command[sizeof(menu_commands[current_index].command) - 1] = '\0';
           current_index++;
         }
       }
@@ -4447,7 +4472,7 @@ void cmd_floating(int argc, char *argv[]) {
   if (strlen(icon_path) > 0) {
     printf("Icon path: %s\n", icon_path);
   }
-  
+
   // 打印菜单命令
   if (menu_command_count > 0) {
     printf("Menu commands: %d\n", menu_command_count);
@@ -4458,8 +4483,9 @@ void cmd_floating(int argc, char *argv[]) {
 
   // 检查进程是否正在运行
   if (!is_process_running(process_name)) {
-    printf("Process '%s' is not running. Floating icon will not be displayed.\n",
-           process_name);
+    printf(
+        "Process '%s' is not running. Floating icon will not be displayed.\n",
+        process_name);
     printf("Floating icon terminated.\n");
     if (menu_commands) {
       free(menu_commands);
@@ -4476,8 +4502,9 @@ void cmd_floating(int argc, char *argv[]) {
   FloatingIconData floatingData = {0};
 
   // 创建浮动图标
-  if (!create_floating_icon(&floatingData, GetModuleHandle(NULL), title, process_name,
-                           icon_path, menu_commands, menu_command_count)) {
+  if (!create_floating_icon(&floatingData, GetModuleHandle(NULL), title,
+                            process_name, icon_path, menu_commands,
+                            menu_command_count)) {
     printf("Error: Failed to create floating icon\n");
     CoUninitialize();
     if (menu_commands) {
@@ -4496,7 +4523,7 @@ void cmd_floating(int argc, char *argv[]) {
   // 清理资源
   destroy_floating_icon(&floatingData);
   CoUninitialize();
-  
+
   // 释放菜单命令内存
   if (menu_commands) {
     free(menu_commands);
