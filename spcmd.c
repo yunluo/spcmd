@@ -147,7 +147,7 @@ BOOL IsRunAsAdmin();
 BOOL ElevatePrivileges(int argc, char *argv[]);
 
 // 通用进程查找和终止函数声明
-BOOL find_process_by_name(const char *processName, DWORD *processId);
+int find_process_by_name(const char *processName, DWORD *processId);
 BOOL kill_process_by_name(const char *processName);
 
 // 通用文件操作函数声明
@@ -2982,9 +2982,6 @@ void cmd_config(int argc, char *argv[]) {
     }
 
     free_ini_data(&data);
-  } else if (strcmp(action, "save") == 0) {
-    // save动作 - 这里实际上set动作已经保存了，所以save可以作为验证或保持兼容性
-    printf("Configuration saved\n");
   } else {
     printf("Error: Unknown action '%s'. Use get, set, save, or del\n", action);
   }
@@ -3070,13 +3067,8 @@ int cmd_process(int argc, char *argv[]) {
     } else {
       // Check by name
       DWORD foundPid = 0;
-      if (find_process_by_name(processName, &foundPid)) {
-        printf("Process '%s' exists with PID %lu\n", processName, foundPid);
-        return 0; // Process exists
-      } else {
-        printf("Process '%s' does not exist\n", processName);
-        return 1; // Process does not exist
-      }
+      int processCount = find_process_by_name(processName, &foundPid);
+      return processCount;
     }
   } else if (strcmp(action, "kill") == 0) {
     // Kill process
@@ -3126,10 +3118,12 @@ BOOL IsRunAsAdmin();
 BOOL ElevatePrivileges(int argc, char *argv[]);
 
 // 通用进程查找函数
-BOOL find_process_by_name(const char *processName, DWORD *processId) {
+int find_process_by_name(const char *processName, DWORD *processId) {
   PROCESSENTRY32 pe32;
   HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-  BOOL found = FALSE;
+  int count = 0;
+  DWORD firstProcessId = 0;
+  BOOL foundFirst = FALSE;
 
   if (hSnapshot != INVALID_HANDLE_VALUE) {
     pe32.dwSize = sizeof(PROCESSENTRY32);
@@ -3137,18 +3131,25 @@ BOOL find_process_by_name(const char *processName, DWORD *processId) {
     if (Process32First(hSnapshot, &pe32)) {
       do {
         if (_stricmp(pe32.szExeFile, processName) == 0) {
-          if (processId != NULL) {
-            *processId = pe32.th32ProcessID;
+          count++;
+          // 记录第一个找到的进程ID
+          if (!foundFirst) {
+            firstProcessId = pe32.th32ProcessID;
+            foundFirst = TRUE;
           }
-          found = TRUE;
-          break;
         }
       } while (Process32Next(hSnapshot, &pe32));
     }
     CloseHandle(hSnapshot);
   }
 
-  return found;
+  // 如果提供了processId指针且至少找到了一个进程，返回第一个进程的ID
+  if (processId != NULL && foundFirst) {
+    *processId = firstProcessId;
+  }
+
+  // 返回找到的进程数量
+  return count;
 }
 
 // 通用进程终止函数
