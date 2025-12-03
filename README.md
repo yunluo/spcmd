@@ -139,10 +139,10 @@ spcmd window --text=message [--title=title] [--width=width] [--height=height] [-
 
 参数说明:
 - `--text=message` - 窗口显示文本（必需）
-- `--title=title` - 窗口标题，默认为"系统提示"
-- `--width=width` - 窗口宽度（像素），默认为600
-- `--height=height` - 窗口高度（像素），默认为400
-- `--fontsize=size` - 字体大小，默认为18
+- `--title=title` - 窗口标题，默认为"SYSTEM INFORMATION"
+- `--width=width` - 窗口宽度（像素），默认为600，范围100-2000
+- `--height=height` - 窗口高度（像素），默认为400，范围100-2000
+- `--fontsize=size` - 字体大小，默认为18，范围8-72
 - `--bgcolor=color` - 背景颜色，可以是颜色名称（white,black,red,green,blue,yellow,cyan,magenta,gray,orange,purple,pink,lightblue,lightgreen,lightgray）或RGB值（r,g,b），默认为白色
 - `--textcolor=color` - 文字颜色，可以是颜色名称或RGB值，默认为黑色
 - `--bold` - 设置文本为粗体
@@ -267,6 +267,8 @@ spcmd process --pid=1234
 spcmd process --action=kill --name=notepad.exe
 ```
 
+注意：当使用 check 操作时，如果指定进程存在，程序将返回 0 并输出进程信息；如果进程不存在，将返回 1。对于同名的多个进程，将返回找到的进程数量。
+
 #### 随机数生成
 ```bash
 spcmd random [--type=uuid4|uuid7|snowflake|number]
@@ -274,6 +276,10 @@ spcmd random [--type=uuid4|uuid7|snowflake|number]
 
 参数说明:
 - `--type=type` - 随机ID类型：uuid4, uuid7, snowflake, number（默认：uuid4）
+  - uuid4: 生成UUID版本4（随机UUID）
+  - uuid7: 生成UUID版本7（时间戳UUID）
+  - snowflake: 生成雪花ID（分布式ID）
+  - number: 生成随机整数
 
 示例:
 ```bash
@@ -289,9 +295,13 @@ spcmd logrotate [--path=path_to_log_file] [--maxsize=size_in_mb] [--daily]
 ```
 
 参数说明:
-- `--path=path_to_log_file` - 日志文件路径
-- `--maxsize=size_in_mb` - 轮转前的最大大小（MB，默认：10）
+- `--path=path_to_log_file` - 日志文件路径，默认为"app.log"
+- `--maxsize=size_in_mb` - 轮转前的最大大小（MB，默认：10，最小值：1）
 - `--daily` - 按天轮转（默认：按大小轮转）
+
+说明:
+- 按大小轮转：当日志文件大小超过指定阈值时进行轮转
+- 按天轮转：每天创建一个新的日志备份文件
 
 示例:
 ```bash
@@ -306,10 +316,15 @@ spcmd tray --process=process_name [--title=title] [--icon=icon_path] [--path=pro
 
 参数说明:
 - `--process=process_name` - 要监控的进程名称（必需）
-- `--title=title` - 托盘图标标题
+- `--title=title` - 托盘图标标题，默认为"SPCMD Tray"
 - `--icon=icon_path` - 图标文件路径
 - `--path=process_path` - 进程路径（可自动检测进程名和图标）
 - `--menu="name,command"` - 菜单项定义，格式为"名称,命令"，可多次使用以添加多个菜单项
+
+说明:
+- 如果指定了`--path`参数，程序将自动从路径中提取进程名称和图标
+- 菜单项将在右键点击托盘图标时显示
+- 当监控的进程退出时，托盘图标也会自动消失
 
 示例:
 ```bash
@@ -327,10 +342,16 @@ spcmd floating --process=process_name [--title=title] [--icon=icon_path] [--path
 
 参数说明:
 - `--process=process_name` - 要监控的进程名称（必需）
-- `--title=title` - 浮动图标标题
+- `--title=title` - 浮动图标标题，默认为"SPCMD Floating"
 - `--icon=icon_path` - 图标文件路径
 - `--path=process_path` - 进程路径（可自动检测进程名和图标）
 - `--menu="name,command"` - 菜单项定义，格式为"名称,命令"，可多次使用以添加多个菜单项
+
+说明:
+- 浮动图标会在屏幕中央显示一个图标，实时监控指定进程的状态
+- 如果指定了`--path`参数，程序将自动从路径中提取进程名称和图标
+- 菜单项将在右键点击浮动图标时显示
+- 当监控的进程退出时，浮动图标也会自动消失
 
 示例:
 ```bash
@@ -351,7 +372,7 @@ spcmd screenshot --save=screenshot.png --format=png
 spcmd shortcut --target=C:\Windows\notepad.exe --name=Notepad
 
 # 显示信息弹窗
-spcmd infoboxtop "Hello World" "Greeting"
+spcmd infoboxtop --message="Hello World" --title="Greeting"
 
 # 创建自定义窗口
 spcmd window --text="Welcome to SPCMD!" --title="SPCMD Window" --bgcolor=lightblue --textcolor=blue --bold
@@ -361,6 +382,18 @@ spcmd process --action=run --exec="notepad.exe test.txt" --workdir=C:\temp
 
 # 生成随机UUID
 spcmd random --type=uuid4
+
+# 检查进程是否存在
+spcmd process --name=notepad.exe
+
+# 杀死进程
+spcmd process --action=kill --name=notepad.exe
+
+# 创建系统托盘图标
+spcmd tray --process=notepad.exe --title="Notepad Monitor"
+
+# 创建浮动图标
+spcmd floating --process=notepad.exe --title="Notepad Monitor"
 ```
 
 ## 构建
@@ -378,4 +411,24 @@ build_final.bat
 
 ## 许可证
 
-[MIT]
+MIT License
+
+Copyright (c) 2025 SPCMD Project
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
