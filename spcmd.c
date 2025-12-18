@@ -2114,32 +2114,84 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     // 计算文本实际占用的矩形区域
     RECT calcRect = textRect;
 
+    // // 将ANSI文本转换为宽字符以支持中文显示
+    // int wideCharLen = MultiByteToWideChar(CP_ACP, 0, displayText, -1, NULL,
+    // 0); wchar_t *wideDisplayText = (wchar_t *)malloc(wideCharLen *
+    // sizeof(wchar_t)); if (wideDisplayText) {
+    //   MultiByteToWideChar(CP_ACP, 0, displayText, -1, wideDisplayText,
+    //                       wideCharLen);
+
+    //   // 使用Unicode版本的DrawTextW来计算文本区域
+    //   DrawTextW(hdc, wideDisplayText, -1, &calcRect,
+    //             DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL | DT_CALCRECT);
+
+    //   // 调整垂直位置以实现居中
+    //   int textHeight = calcRect.bottom - calcRect.top;
+    //   int availableHeight = textRect.bottom - textRect.top;
+    //   if (textHeight < availableHeight) {
+    //     int offset = (availableHeight - textHeight) / 2;
+    //     textRect.top += offset;
+    //     textRect.bottom = textRect.top + textHeight;
+    //   }
+
+    //   // 使用Unicode版本的DrawTextW来绘制文本
+    //   DrawTextW(hdc, wideDisplayText, -1, &textRect,
+    //             DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL);
+
+    //   // 释放宽字符内存
+    //   free(wideDisplayText);
+    // }
+    
     // 将ANSI文本转换为宽字符以支持中文显示
-    int wideCharLen = MultiByteToWideChar(CP_ACP, 0, displayText, -1, NULL, 0);
-    wchar_t *wideDisplayText = (wchar_t *)malloc(wideCharLen * sizeof(wchar_t));
-    if (wideDisplayText) {
-      MultiByteToWideChar(CP_ACP, 0, displayText, -1, wideDisplayText,
-                          wideCharLen);
+    UINT codePage = GetACP(); // 获取系统默认代码页
+    int wideCharLen =
+        MultiByteToWideChar(codePage, 0, displayText, -1, NULL, 0);
 
-      // 使用Unicode版本的DrawTextW来计算文本区域
-      DrawTextW(hdc, wideDisplayText, -1, &calcRect,
-                DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL | DT_CALCRECT);
+    // 如果使用系统默认代码页转换失败，尝试使用UTF-8
+    if (wideCharLen <= 0) {
+      codePage = CP_UTF8;
+      wideCharLen = MultiByteToWideChar(codePage, 0, displayText, -1, NULL, 0);
 
-      // 调整垂直位置以实现居中
-      int textHeight = calcRect.bottom - calcRect.top;
-      int availableHeight = textRect.bottom - textRect.top;
-      if (textHeight < availableHeight) {
-        int offset = (availableHeight - textHeight) / 2;
-        textRect.top += offset;
-        textRect.bottom = textRect.top + textHeight;
+      // 如果UTF-8也失败，再尝试简体中文编码(GBK)
+      if (wideCharLen <= 0) {
+        codePage = 936; // GBK
+        wideCharLen =
+            MultiByteToWideChar(codePage, 0, displayText, -1, NULL, 0);
       }
+    }
 
-      // 使用Unicode版本的DrawTextW来绘制文本
-      DrawTextW(hdc, wideDisplayText, -1, &textRect,
-                DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL);
+    // 只有在成功获取到所需长度时才分配内存并进行转换
+    if (wideCharLen > 0) {
+      wchar_t *wideDisplayText =
+          (wchar_t *)malloc(wideCharLen * sizeof(wchar_t));
+      if (wideDisplayText) {
+        // 执行实际的转换
+        int result = MultiByteToWideChar(codePage, 0, displayText, -1,
+                                         wideDisplayText, wideCharLen);
 
-      // 释放宽字符内存
-      free(wideDisplayText);
+        // 只有转换成功才进行绘制
+        if (result > 0) {
+          // 使用Unicode版本的DrawTextW来计算文本区域
+          DrawTextW(hdc, wideDisplayText, -1, &calcRect,
+                    DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL | DT_CALCRECT);
+
+          // 调整垂直位置以实现居中
+          int textHeight = calcRect.bottom - calcRect.top;
+          int availableHeight = textRect.bottom - textRect.top;
+          if (textHeight < availableHeight) {
+            int offset = (availableHeight - textHeight) / 2;
+            textRect.top += offset;
+            textRect.bottom = textRect.top + textHeight;
+          }
+
+          // 使用Unicode版本的DrawTextW来绘制文本
+          DrawTextW(hdc, wideDisplayText, -1, &textRect,
+                    DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL);
+        }
+
+        // 释放宽字符内存
+        free(wideDisplayText);
+      }
     }
 
     EndPaint(hwnd, &ps);
