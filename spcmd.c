@@ -142,6 +142,13 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
 // 系统变量解析函数声明
 char *resolve_system_variables(const char *input);
 
+// 进程ID列表结构体
+typedef struct {
+  DWORD *pids;
+  int count;
+  int capacity;
+} ProcessIdList;
+
 // 添加权限检查和提升权限的函数声明
 BOOL IsRunAsAdmin();
 BOOL ElevatePrivileges(int argc, char *argv[]);
@@ -149,6 +156,7 @@ BOOL ElevatePrivileges(int argc, char *argv[]);
 // 通用进程查找和终止函数声明
 int find_process_by_name(const char *processName, DWORD *processId);
 BOOL kill_process_by_name(const char *processName);
+ProcessIdList *get_pids_by_exe_name(const char *exeName);
 
 // 通用文件操作函数声明
 BOOL create_empty_file(const char *path);
@@ -3150,6 +3158,59 @@ int find_process_by_name(const char *processName, DWORD *processId) {
 
   // 返回找到的进程数量
   return count;
+}
+
+// 通过可执行文件名获取所有进程ID
+ProcessIdList *get_pids_by_exe_name(const char *exeName) {
+  PROCESSENTRY32 pe32;
+  HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  ProcessIdList *pidList = (ProcessIdList *)malloc(sizeof(ProcessIdList));
+
+  if (pidList == NULL) {
+    return NULL;
+  }
+
+  // 初始化列表
+  pidList->count = 0;
+  pidList->capacity = 10; // 初始容量
+  pidList->pids = (DWORD *)malloc(sizeof(DWORD) * pidList->capacity);
+
+  if (pidList->pids == NULL) {
+    free(pidList);
+    return NULL;
+  }
+
+  if (hSnapshot != INVALID_HANDLE_VALUE) {
+    pe32.dwSize = sizeof(PROCESSENTRY32);
+
+    if (Process32First(hSnapshot, &pe32)) {
+      do {
+        if (_stricmp(pe32.szExeFile, exeName) == 0) {
+          // 如果需要扩展容量
+          if (pidList->count >= pidList->capacity) {
+            pidList->capacity *= 2;
+            DWORD *newPids = (DWORD *)realloc(
+                pidList->pids, sizeof(DWORD) * pidList->capacity);
+            if (newPids == NULL) {
+              // 内存重新分配失败，清理并返回NULL
+              free(pidList->pids);
+              free(pidList);
+              CloseHandle(hSnapshot);
+              return NULL;
+            }
+            pidList->pids = newPids;
+          }
+
+          // 添加PID到列表
+          pidList->pids[pidList->count] = pe32.th32ProcessID;
+          pidList->count++;
+        }
+      } while (Process32Next(hSnapshot, &pe32));
+    }
+    CloseHandle(hSnapshot);
+  }
+
+  return pidList;
 }
 
 // 通用进程终止函数
