@@ -1302,94 +1302,6 @@ void cmd_restart(int argc, char *argv[]) {
   }
 }
 
-void cmd_exec2(int argc, char *argv[]) {
-
-  // Check if help is needed
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Exec2 command help:\n");
-    printf("  spcmd exec2 --state=show/hide/min/max --workdir=path "
-           "--exec=command\n\n");
-    printf("Parameter description:\n");
-    printf(
-        "  --state=state       - Window state (show/hide/min/max, required)\n");
-    printf("  --workdir=path      - Working directory (required)\n");
-    printf("  --exec=command      - Application with optional arguments "
-           "(required)\n\n");
-    printf("Examples:\n");
-    printf("  spcmd exec2 --state=show --workdir=C:\\Windows "
-           "--exec=notepad.exe\n");
-    printf("  spcmd exec2 --state=max --workdir=C:\\ --exec=cmd.exe /c dir\n");
-    return;
-  }
-
-  // Check required parameters
-  int windowState = SW_SHOW;
-  char workingFolder[MAX_PATH] = {0};
-  char commandLine[MAX_PATH * 2] = {0};
-
-  BOOL hasState = FALSE;
-  BOOL hasWorkdir = FALSE;
-  BOOL hasExec = FALSE;
-
-  // Parse parameters
-  for (int i = 2; i < argc; i++) {
-    if (strncmp(argv[i], "--state=", 8) == 0) {
-      if (strcmp(argv[i] + 8, "hide") == 0) {
-        windowState = SW_HIDE;
-      } else if (strcmp(argv[i] + 8, "min") == 0) {
-        windowState = SW_MINIMIZE;
-      } else if (strcmp(argv[i] + 8, "max") == 0) {
-        windowState = SW_MAXIMIZE;
-      } else if (strcmp(argv[i] + 8, "show") == 0) {
-        windowState = SW_SHOW;
-      }
-      hasState = TRUE;
-    } else if (strncmp(argv[i], "--workdir=", 10) == 0) {
-      strncpy(workingFolder, argv[i] + 10, MAX_PATH - 1);
-      workingFolder[MAX_PATH - 1] = '\0';
-      hasWorkdir = TRUE;
-    } else if (strncmp(argv[i], "--exec=", 7) == 0) {
-      strncpy(commandLine, argv[i] + 7, sizeof(commandLine) - 1);
-      commandLine[sizeof(commandLine) - 1] = '\0';
-      hasExec = TRUE;
-    }
-  }
-
-  // Check if required parameters are provided
-  if (!hasState || !hasWorkdir || !hasExec) {
-    printf("Error: Missing required parameters\n");
-    printf("Usage: spcmd exec2 --state=show/hide/min/max --workdir=path "
-           "--exec=command\n");
-    printf("Use 'spcmd exec2 --help' for more information\n");
-    return;
-  }
-
-  // Run the application with specified working folder
-  STARTUPINFO si;
-  PROCESS_INFORMATION pi;
-
-  ZeroMemory(&si, sizeof(si));
-  si.cb = sizeof(si);
-  si.dwFlags = STARTF_USESHOWWINDOW;
-  si.wShowWindow = windowState;
-
-  ZeroMemory(&pi, sizeof(pi));
-
-  // Start the application
-  if (CreateProcessA(NULL, commandLine, NULL, NULL, FALSE, 0, NULL,
-                     workingFolder, &si, &pi)) {
-    printf("Application '%s' started successfully in folder '%s'\n",
-           commandLine, workingFolder);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-  } else {
-    printf("Error: Failed to start application '%s' in folder '%s'\n",
-           commandLine, workingFolder);
-    printf("Error code: %lu\n", GetLastError());
-  }
-}
-
 void cmd_infoboxtop(int argc, char *argv[]) {
   // 使用统一的参数解析框架
   ParamDefinition param_defs[] = {{"message", NULL, TRUE, FALSE},
@@ -1407,6 +1319,18 @@ void cmd_infoboxtop(int argc, char *argv[]) {
   // 获取参数值
   const char *message = get_param_value(context, "message");
   const char *title = get_param_value(context, "title");
+
+  // 添加NULL检查 - 防止空指针解引用
+  if (!message) {
+    printf("Error: message parameter is required\n");
+    free_param_context(context);
+    return;
+  }
+  if (!title) {
+    printf("Error: title parameter is required\n");
+    free_param_context(context);
+    return;
+  }
 
   // 获取当前活跃窗口句柄，然后在该窗口上显示置顶消息框
   HWND hActiveWnd = GetForegroundWindow();
@@ -2114,61 +2038,17 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     // 计算文本实际占用的矩形区域
     RECT calcRect = textRect;
 
-    // // 将ANSI文本转换为宽字符以支持中文显示
-    // int wideCharLen = MultiByteToWideChar(CP_ACP, 0, displayText, -1, NULL,
-    // 0); wchar_t *wideDisplayText = (wchar_t *)malloc(wideCharLen *
-    // sizeof(wchar_t)); if (wideDisplayText) {
-    //   MultiByteToWideChar(CP_ACP, 0, displayText, -1, wideDisplayText,
-    //                       wideCharLen);
-
-    //   // 使用Unicode版本的DrawTextW来计算文本区域
-    //   DrawTextW(hdc, wideDisplayText, -1, &calcRect,
-    //             DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL | DT_CALCRECT);
-
-    //   // 调整垂直位置以实现居中
-    //   int textHeight = calcRect.bottom - calcRect.top;
-    //   int availableHeight = textRect.bottom - textRect.top;
-    //   if (textHeight < availableHeight) {
-    //     int offset = (availableHeight - textHeight) / 2;
-    //     textRect.top += offset;
-    //     textRect.bottom = textRect.top + textHeight;
-    //   }
-
-    //   // 使用Unicode版本的DrawTextW来绘制文本
-    //   DrawTextW(hdc, wideDisplayText, -1, &textRect,
-    //             DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL);
-
-    //   // 释放宽字符内存
-    //   free(wideDisplayText);
-    // }
-    
     // 将ANSI文本转换为宽字符以支持中文显示
-    UINT codePage = GetACP(); // 获取系统默认代码页
-    int wideCharLen =
-        MultiByteToWideChar(codePage, 0, displayText, -1, NULL, 0);
-
-    // 如果使用系统默认代码页转换失败，尝试使用UTF-8
-    if (wideCharLen <= 0) {
-      codePage = CP_UTF8;
-      wideCharLen = MultiByteToWideChar(codePage, 0, displayText, -1, NULL, 0);
-
-      // 如果UTF-8也失败，再尝试简体中文编码(GBK)
-      if (wideCharLen <= 0) {
-        codePage = 936; // GBK
-        wideCharLen =
-            MultiByteToWideChar(codePage, 0, displayText, -1, NULL, 0);
-      }
-    }
-
+    // 使用固定的CP_ACP代码页，避免使用GetACP函数以减少杀毒软件误报
+    int wideCharLen = MultiByteToWideChar(CP_ACP, 0, displayText, -1, NULL, 0);
+    
     // 只有在成功获取到所需长度时才分配内存并进行转换
     if (wideCharLen > 0) {
-      wchar_t *wideDisplayText =
-          (wchar_t *)malloc(wideCharLen * sizeof(wchar_t));
+      wchar_t *wideDisplayText = (wchar_t *)malloc(wideCharLen * sizeof(wchar_t));
       if (wideDisplayText) {
         // 执行实际的转换
-        int result = MultiByteToWideChar(codePage, 0, displayText, -1,
-                                         wideDisplayText, wideCharLen);
-
+        int result = MultiByteToWideChar(CP_ACP, 0, displayText, -1, wideDisplayText, wideCharLen);
+        
         // 只有转换成功才进行绘制
         if (result > 0) {
           // 使用Unicode版本的DrawTextW来计算文本区域
@@ -2188,7 +2068,7 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
           DrawTextW(hdc, wideDisplayText, -1, &textRect,
                     DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL);
         }
-
+        
         // 释放宽字符内存
         free(wideDisplayText);
       }
@@ -2630,8 +2510,25 @@ void cmd_notify(int argc, char *argv[]) {
   // 为Unicode转换分配内存
   int title_len = MultiByteToWideChar(CP_ACP, 0, title, -1, NULL, 0);
   int message_len = MultiByteToWideChar(CP_ACP, 0, message, -1, NULL, 0);
+
+  // 检查转换是否成功
+  if (title_len <= 0 || message_len <= 0) {
+    printf("Error: Failed to convert text to Unicode\n");
+    free_param_context(context);
+    return;
+  }
+
   WCHAR *wtitle = (WCHAR *)malloc(title_len * sizeof(WCHAR));
   WCHAR *wmessage = (WCHAR *)malloc(message_len * sizeof(WCHAR));
+
+  // 检查内存分配是否成功
+  if (!wtitle || !wmessage) {
+    printf("Error: Memory allocation failed\n");
+    if (wtitle) free(wtitle);
+    if (wmessage) free(wmessage);
+    free_param_context(context);
+    return;
+  }
 
   // 转换为宽字符
   MultiByteToWideChar(CP_ACP, 0, title, -1, wtitle, title_len);
@@ -3852,6 +3749,8 @@ BOOL create_tray_icon(TrayIconData *trayData, HINSTANCE hInstance,
   if (!trayData->process_running) {
     printf("Process '%s' is not running. Tray icon will not be displayed.\n",
            processName);
+    // 注销窗口类 - 防止资源泄漏
+    UnregisterClass("SPCMDTrayIconClass", GetModuleHandle(NULL));
     return TRUE; // 返回TRUE表示函数执行成功，但不显示图标
   }
 
@@ -4400,6 +4299,8 @@ BOOL create_floating_icon(FloatingIconData *floatingData, HINSTANCE hInstance,
   // 检查进程是否正在运行
   floatingData->process_running = is_process_running(processName);
   if (!floatingData->process_running) {
+    // 注销窗口类 - 防止资源泄漏
+    UnregisterClass("SPCMDFloatingIconClass", GetModuleHandle(NULL));
     return FALSE;
   }
 
