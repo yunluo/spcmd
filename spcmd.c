@@ -20,6 +20,8 @@
 #include "ini.h"
 #include "stb_image_write.h"
 #include <objbase.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <psapi.h>    // 添加这个头文件以支持进程信息查询
 #include <shellapi.h> // 添加这个头文件以支持图标提取
 #include <shlobj.h>
@@ -105,6 +107,7 @@ void cmd_logrotate(int argc, char *argv[]);
 void cmd_tray(int argc, char *argv[]);
 void cmd_floating(int argc, char *argv[]);
 char *cmd_clipboard(int argc, char *argv[]);
+void cmd_timesync(int argc, char *argv[]);
 
 // Base64 encoding function declaration
 char *base64_encode(const unsigned char *data, size_t input_length,
@@ -135,6 +138,7 @@ Command command_table[] = {
     {"tray", (void (*)(int, char **))cmd_tray, 0},
     {"floating", (void (*)(int, char **))cmd_floating, 0},
     {"clipboard", (void (*)(int, char **))cmd_clipboard, 1},
+    {"timesync", (void (*)(int, char **))cmd_timesync, 0},
     {NULL, NULL, 0} // 表结束标记
 };
 void save_as_base64_data(const char *bitmap_data, DWORD data_size,
@@ -179,6 +183,14 @@ typedef struct {
 // WinMain函数：GUI应用程序的入口点
 int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
                    LPSTR _lpCmdLine, int _nCmdShow) {
+  // 初始化Winsock
+  WSADATA wsaData;
+  int wsaInit = WSAStartup(MAKEWORD(2, 2), &wsaData);
+  if (wsaInit != 0) {
+    printf("Error: Failed to initialize Winsock\n");
+    return 1;
+  }
+
   // 避免未使用参数警告
   (void)_hInstance;
   (void)_hPrevInstance;
@@ -232,6 +244,9 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
     free(argv[i]);
   }
   free(argv);
+
+  // 清理Winsock
+  WSACleanup();
 
   return 0;
 }
@@ -4904,4 +4919,139 @@ char *cmd_clipboard(int argc, char *argv[]) {
   CloseClipboard();
   CoUninitialize();
   return result;
+}
+
+// NTP时间同步命令
+void cmd_timesync(int argc, char *argv[]) {
+  // 默认NTP服务器
+  char serverIP[64] = "time.windows.com";
+  BOOL hasServer = FALSE;
+
+  // 解析参数
+  for (int i = 2; i < argc; i++) {
+    if (strncmp(argv[i], "--server=", 9) == 0) {
+      strncpy(serverIP, argv[i] + 9, sizeof(serverIP) - 1);
+      serverIP[sizeof(serverIP) - 1] = '\0';
+      hasServer = TRUE;
+    } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "--h") == 0) {
+      printf("Time synchronization command usage:\n");
+      printf("  spcmd timesync                 - Sync time using default server\n");
+      printf("  spcmd timesync --server=ip     - Sync time using specified NTP server\n\n");
+      printf("Examples:\n");
+      printf("  spcmd timesync\n");
+      printf("  spcmd timesync --server=time.windows.com\n");
+      printf("  spcmd timesync --server=192.168.1.1\n");
+      return;
+    }
+  }
+
+  printf("Synchronizing time from: %s\n", serverIP);
+
+  // 创建UDP socket
+  SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (sock == INVALID_SOCKET) {
+    printf("Error: Failed to create socket\n");
+    return;
+  }
+
+  // 设置socket超时
+  DWORD timeout = 5000; // 5秒超时
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(timeout));
+
+  // 解析服务器地址
+  struct hostent *host = gethostbyname(serverIP);
+  if (!host) {
+    printf("Error: Cannot resolve server address: %s\n", serverIP);
+    closesocket(sock);
+    return;
+  }
+
+  struct sockaddr_in serverAddr;
+  memset(&serverAddr, 0, sizeof(serverAddr));
+  serverAddr.sin_family = AF_INET;
+  serverAddr.sin_port = htons(123); // NTP端口
+  memcpy(&serverAddr.sin_addr.s_addr, host->h_addr_list[0], host->h_length);
+
+  // 构建NTP请求包（48字节）
+  char ntpRequest[48];
+  memset(ntpRequest, 0, sizeof(ntpRequest));
+  ntpRequest[0] = 0x1B; // LI=0, VN=3, Mode=3 (client)
+
+  // 发送NTP请求
+  int sendResult = sendto(sock, ntpRequest, sizeof(ntpRequest), 0,
+                          (struct sockaddr *)&serverAddr, sizeof(serverAddr));
+  if (sendResult == SOCKET_ERROR) {
+    printf("Error: Failed to send NTP request\n");
+    closesocket(sock);
+    return;
+  }
+
+  // 接收NTP响应
+  char ntpResponse[48];
+  struct sockaddr_in fromAddr;
+  int fromLen = sizeof(fromAddr);
+  int recvResult = recvfrom(sock, ntpResponse, sizeof(ntpResponse), 0,
+                            (struct sockaddr *)&fromAddr, &fromLen);
+  closesocket(sock);
+
+  if (recvResult == SOCKET_ERROR) {
+    printf("Error: No response from NTP server (timeout or error)\n");
+    return;
+  }
+
+  if (recvResult < 48) {
+    printf("Error: Invalid NTP response\n");
+    return;
+  }
+
+  // 解析NTP时间戳（第40-43字节是秒数部分，MSB first）
+  // NTP时间从1900年1月1日开始，需要转换到1970年1月1日（Unix epoch）
+  // 2208988800 = (70 * 365 + 17) * 24 * 60 * 60 (1900到1970的秒数差)
+  unsigned int ntpSeconds = (unsigned char)ntpResponse[40];
+  ntpSeconds = (ntpSeconds << 8) | (unsigned char)ntpResponse[41];
+  ntpSeconds = (ntpSeconds << 8) | (unsigned char)ntpResponse[42];
+  ntpSeconds = (ntpSeconds << 8) | (unsigned char)ntpResponse[43];
+
+  // 转换为Unix时间戳
+  time_t unixTime = ntpSeconds - 2208988800UL;
+
+  // 显示当前时间和同步后的时间
+  printf("Current system time: ");
+  SYSTEMTIME st;
+  GetLocalTime(&st);
+  printf("%04d-%02d-%02d %02d:%02d:%02d\n", st.wYear, st.wMonth, st.wDay,
+         st.wHour, st.wMinute, st.wSecond);
+
+  struct tm *timeinfo = localtime(&unixTime);
+  if (timeinfo) {
+    printf("Target time (from %s): ", serverIP);
+    printf("%04d-%02d-%02d %02d:%02d:%02d\n", timeinfo->tm_year + 1900,
+           timeinfo->tm_mon + 1, timeinfo->tm_mday, timeinfo->tm_hour,
+           timeinfo->tm_min, timeinfo->tm_sec);
+
+    // 设置系统时间
+    SYSTEMTIME newTime;
+    newTime.wYear = timeinfo->tm_year + 1900;
+    newTime.wMonth = timeinfo->tm_mon + 1;
+    newTime.wDayOfWeek = timeinfo->tm_wday;
+    newTime.wDay = timeinfo->tm_mday;
+    newTime.wHour = timeinfo->tm_hour;
+    newTime.wMinute = timeinfo->tm_min;
+    newTime.wSecond = timeinfo->tm_sec;
+    newTime.wMilliseconds = 0;
+
+    // 需要管理员权限来设置系统时间
+    if (!IsRunAsAdmin()) {
+      printf("\nNote: Setting system time requires administrator privileges.\n");
+      printf("Please run as administrator to apply the time change.\n");
+    } else {
+      if (SetLocalTime(&newTime)) {
+        printf("\nTime synchronized successfully!\n");
+      } else {
+        printf("\nError: Failed to set system time (error=%lu)\n", GetLastError());
+      }
+    }
+  } else {
+    printf("Error: Failed to parse NTP response\n");
+  }
 }

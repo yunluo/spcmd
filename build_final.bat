@@ -61,7 +61,7 @@ if exist spcmd.rc (
 REM Main compilation command with or without resources - Optimized for Windows XP compatibility
 REM Using -mwindows flag to create GUI application without console window
 REM Added -static option to statically link all libraries, including msvCRT.dll, for Windows XP compatibility
-gcc-xp -Wall -Wextra -std=c99 -m32 -mwindows -Os -D_WIN32_WINNT=0x0501 -DWINVER=0x0501 -D_WIN32_IE=0x0500 -s -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-ident -fdata-sections -ffunction-sections -Wl,--gc-sections -Wl,--strip-all -static spcmd.c ini.c %RESOBJ% -o spcmd.exe -lgdi32 -luser32 -lshell32 -lole32 -lshlwapi
+gcc-xp -Wall -Wextra -std=c99 -m32 -mwindows -Os -D_WIN32_WINNT=0x0501 -DWINVER=0x0501 -D_WIN32_IE=0x0500 -s -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-ident -fdata-sections -ffunction-sections -Wl,--gc-sections -Wl,--strip-all -static spcmd.c ini.c %RESOBJ% -o spcmd.exe -lgdi32 -luser32 -lshell32 -lole32 -lshlwapi -lws2_32
 
 REM Check if compilation was successful
 if %errorlevel% neq 0 (
