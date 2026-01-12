@@ -626,9 +626,10 @@ void cmd_shortcut(int argc, char *argv[]) {
 
   // Get desktop path
   char desktopPath[MAX_PATH];
-  if (FAILED(SHGetFolderPathA(NULL, CSIDL_DESKTOPDIRECTORY, NULL,
-                              SHGFP_TYPE_CURRENT, desktopPath))) {
-    printf("Error: Unable to get desktop path\n");
+  HRESULT hr = SHGetFolderPathA(NULL, CSIDL_DESKTOPDIRECTORY, NULL,
+                                SHGFP_TYPE_CURRENT, desktopPath);
+  if (FAILED(hr)) {
+    printf("Error: Unable to get desktop path (hr=0x%08X)\n", hr);
     CoUninitialize();
     return;
   }
@@ -638,11 +639,21 @@ void cmd_shortcut(int argc, char *argv[]) {
   snprintf(shortcutPath, MAX_PATH, "%s\\%s", desktopPath, finalName);
 
   // Create shortcut
-  CoInitialize(NULL);
+  HRESULT hres = CoInitialize(NULL);
+  if (FAILED(hres)) {
+    printf("Error: Failed to initialize COM (hr=0x%08X)\n", hres);
+    return;
+  }
 
   IShellLinkA *pShellLink = NULL;
-  HRESULT hres = CoCreateInstance(&CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER,
-                                  &IID_IShellLinkA, (LPVOID *)&pShellLink);
+  hres = CoCreateInstance(&CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER,
+                          &IID_IShellLinkA, (LPVOID *)&pShellLink);
+
+  if (FAILED(hres)) {
+    printf("Error: Unable to create ShellLink object (hr=0x%08X)\n", hres);
+    CoUninitialize();
+    return;
+  }
 
   if (SUCCEEDED(hres)) {
     // Set target path
@@ -681,26 +692,33 @@ void cmd_shortcut(int argc, char *argv[]) {
                                       (LPVOID *)&pPersistFile);
 
     if (SUCCEEDED(hres)) {
-      // Convert to wide character
+      // Convert to wide character for IPersistFile::Save
       WCHAR wsz[MAX_PATH];
-      MultiByteToWideChar(CP_ACP, 0, shortcutPath, -1, wsz, MAX_PATH);
+      int wideLen = MultiByteToWideChar(CP_UTF8, 0, shortcutPath, -1, wsz, MAX_PATH);
+      if (wideLen == 0) {
+        printf("Error: Failed to convert path to Unicode (error=%lu)\n", GetLastError());
+        IPersistFile_Release(pPersistFile);
+        IShellLinkA_Release(pShellLink);
+        CoUninitialize();
+        return;
+      }
 
       hres = IPersistFile_Save(pPersistFile, wsz, TRUE);
 
       if (SUCCEEDED(hres)) {
         printf("Shortcut created: %s\n", shortcutPath);
       } else {
-        printf("Error: Unable to save shortcut to %s\n", shortcutPath);
+        printf("Error: Unable to save shortcut to %s (hr=0x%08X)\n", shortcutPath, hres);
       }
 
       IPersistFile_Release(pPersistFile);
     } else {
-      printf("Error: Unable to get IPersistFile interface\n");
+      printf("Error: Unable to get IPersistFile interface (hr=0x%08X)\n", hres);
     }
 
     IShellLinkA_Release(pShellLink);
   } else {
-    printf("Error: Unable to create shortcut object\n");
+    printf("Error: Unable to create shortcut object (hr=0x%08X)\n", hres);
   }
 
   CoUninitialize();
