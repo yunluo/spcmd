@@ -104,6 +104,7 @@ char *cmd_random(int argc, char *argv[]);
 void cmd_logrotate(int argc, char *argv[]);
 void cmd_tray(int argc, char *argv[]);
 void cmd_floating(int argc, char *argv[]);
+char *cmd_clipboard(int argc, char *argv[]);
 
 // Base64 encoding function declaration
 char *base64_encode(const unsigned char *data, size_t input_length,
@@ -133,6 +134,7 @@ Command command_table[] = {
     {"logrotate", (void (*)(int, char **))cmd_logrotate, 0},
     {"tray", (void (*)(int, char **))cmd_tray, 0},
     {"floating", (void (*)(int, char **))cmd_floating, 0},
+    {"clipboard", (void (*)(int, char **))cmd_clipboard, 1},
     {NULL, NULL, 0} // 表结束标记
 };
 void save_as_base64_data(const char *bitmap_data, DWORD data_size,
@@ -4687,4 +4689,123 @@ void free_param_context(ParamContext *context) {
   }
 
   free(context);
+}
+
+// 剪贴板操作命令
+char *cmd_clipboard(int argc, char *argv[]) {
+  // 检查是否需要帮助
+  if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
+    printf("Clipboard command usage:\n");
+    printf("  spcmd clipboard --get          - Get text from clipboard\n");
+    printf("  spcmd clipboard --set=text     - Set text to clipboard\n");
+    printf("  spcmd clipboard --clear        - Clear clipboard\n\n");
+    printf("Examples:\n");
+    printf("  spcmd clipboard --get\n");
+    printf("  spcmd clipboard --set=Hello World\n");
+    printf("  spcmd clipboard --clear\n");
+    return NULL;
+  }
+
+  ParamDefinition param_defs[] = {{"get", NULL, FALSE, FALSE},
+                                  {"set", NULL, FALSE, FALSE},
+                                  {"clear", NULL, FALSE, FALSE}};
+
+  ParamContext *context = create_param_context(param_defs, 3);
+  if (!context) {
+    printf("Error: Failed to create parameter context\n");
+    return NULL;
+  }
+
+  parse_parameters(context, argc, argv, 2);
+
+  BOOL do_get = is_param_set(context, "get");
+  BOOL do_set = is_param_set(context, "set");
+  BOOL do_clear = is_param_set(context, "clear");
+
+  // 如果没有指定操作，默认get
+  if (!do_get && !do_set && !do_clear) {
+    do_get = TRUE;
+  }
+
+  // 打开剪贴板
+  if (!OpenClipboard(NULL)) {
+    printf("Error: Failed to open clipboard\n");
+    free_param_context(context);
+    return NULL;
+  }
+
+  char *result = NULL;
+
+  if (do_clear) {
+    // 清空剪贴板
+    if (EmptyClipboard()) {
+      printf("Clipboard cleared successfully\n");
+    } else {
+      printf("Error: Failed to clear clipboard\n");
+    }
+  } else if (do_set) {
+    // 设置剪贴板文本
+    const char *text = get_param_value(context, "set");
+    if (!text) {
+      printf("Error: --set requires a value\n");
+      CloseClipboard();
+      free_param_context(context);
+      return NULL;
+    }
+
+    // 计算所需内存（考虑UTF-8到UTF-16转换）
+    int text_len = strlen(text);
+    int wide_len = MultiByteToWideChar(CP_UTF8, 0, text, text_len, NULL, 0);
+    HGLOBAL hGlob = GlobalAlloc(GMEM_MOVEABLE, (wide_len + 1) * sizeof(wchar_t));
+
+    if (!hGlob) {
+      printf("Error: Failed to allocate memory\n");
+      CloseClipboard();
+      free_param_context(context);
+      return NULL;
+    }
+
+    wchar_t *wide_text = (wchar_t *)GlobalLock(hGlob);
+    MultiByteToWideChar(CP_UTF8, 0, text, text_len, wide_text, wide_len);
+    wide_text[wide_len] = L'\0';
+    GlobalUnlock(hGlob);
+
+    // 设置剪贴板内容
+    if (SetClipboardData(CF_UNICODETEXT, hGlob)) {
+      printf("Text set to clipboard successfully\n");
+    } else {
+      printf("Error: Failed to set clipboard data\n");
+      GlobalFree(hGlob);
+    }
+  } else if (do_get) {
+    // 获取剪贴板文本
+    HGLOBAL hGlob = GetClipboardData(CF_UNICODETEXT);
+    if (!hGlob) {
+      CloseClipboard();
+      free_param_context(context);
+      return NULL;
+    }
+
+    wchar_t *wide_text = (wchar_t *)GlobalLock(hGlob);
+    if (!wide_text) {
+      CloseClipboard();
+      free_param_context(context);
+      return NULL;
+    }
+
+    // 分配结果内存
+    int result_len = WideCharToMultiByte(CP_UTF8, 0, wide_text, -1, NULL, 0, NULL, NULL);
+    result = (char *)malloc(result_len + 1);
+    if (result) {
+      WideCharToMultiByte(CP_UTF8, 0, wide_text, -1, result, result_len, NULL, NULL);
+      result[result_len] = '\0';
+      printf("%s\n", result);
+    }
+
+    GlobalUnlock(hGlob);
+  }
+
+  CloseClipboard();
+  free_param_context(context);
+  return result;
 }
