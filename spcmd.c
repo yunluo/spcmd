@@ -173,6 +173,7 @@ typedef struct {
   BOOL modal;         // 是否为模态弹窗
   BOOL noDrag;        // 是否禁止拖拽
   BOOL bold;          // 是否粗体
+  UINT codePage;      // 文本编码代码页（CP_UTF8, CP_ACP等）
 } WindowParams;
 
 // WinMain函数：GUI应用程序的入口点
@@ -196,13 +197,13 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
     argv = (char **)malloc(sizeof(char *));
     argv[0] = (char *)"spcmd.exe";
   } else {
-    // 转换宽字符参数为多字节字符
+    // 转换宽字符参数为多字节字符（使用UTF-8编码，解决跨地区乱码问题）
     argv = (char **)malloc(argc * sizeof(char *));
     for (int i = 0; i < argc; i++) {
       int len =
-          WideCharToMultiByte(CP_ACP, 0, argvW[i], -1, NULL, 0, NULL, NULL);
+          WideCharToMultiByte(CP_UTF8, 0, argvW[i], -1, NULL, 0, NULL, NULL);
       argv[i] = (char *)malloc(len * sizeof(char));
-      WideCharToMultiByte(CP_ACP, 0, argvW[i], -1, argv[i], len, NULL, NULL);
+      WideCharToMultiByte(CP_UTF8, 0, argvW[i], -1, argv[i], len, NULL, NULL);
     }
     // 释放系统分配的宽字符参数
     LocalFree(argvW);
@@ -2043,15 +2044,15 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     RECT calcRect = textRect;
 
     // 将ANSI文本转换为宽字符以支持中文显示
-    // 使用固定的CP_ACP代码页，避免使用GetACP函数以减少杀毒软件误报
-    int wideCharLen = MultiByteToWideChar(CP_ACP, 0, displayText, -1, NULL, 0);
+    // 使用params中指定的代码页，支持UTF-8、GBK、BIG5等编码
+    int wideCharLen = MultiByteToWideChar(params->codePage, 0, displayText, -1, NULL, 0);
     
     // 只有在成功获取到所需长度时才分配内存并进行转换
     if (wideCharLen > 0) {
       wchar_t *wideDisplayText = (wchar_t *)malloc(wideCharLen * sizeof(wchar_t));
       if (wideDisplayText) {
         // 执行实际的转换
-        int result = MultiByteToWideChar(CP_ACP, 0, displayText, -1, wideDisplayText, wideCharLen);
+        int result = MultiByteToWideChar(params->codePage, 0, displayText, -1, wideDisplayText, wideCharLen);
         
         // 只有转换成功才进行绘制
         if (result > 0) {
@@ -2172,6 +2173,7 @@ void cmd_window(int argc, char *argv[]) {
   BOOL noDrag = FALSE;
   BOOL bold = FALSE;
   BOOL hasText = FALSE;
+  UINT codePage = CP_UTF8; // 默认使用UTF-8编码，解决跨地区乱码问题
 
   // 解析所有参数
   for (int i = 2; i < argc; i++) {
@@ -2258,6 +2260,20 @@ void cmd_window(int argc, char *argv[]) {
       modal = TRUE;
     } else if (strcmp(argv[i], "--nodrag") == 0) {
       noDrag = TRUE;
+    } else if (strncmp(argv[i], "--encoding=", 11) == 0) {
+      char *encoding = argv[i] + 11;
+      if (strcmp(encoding, "utf8") == 0 || strcmp(encoding, "utf-8") == 0) {
+        codePage = CP_UTF8;
+      } else if (strcmp(encoding, "gbk") == 0 || strcmp(encoding, "gb2312") == 0) {
+        codePage = 936; // GBK
+      } else if (strcmp(encoding, "big5") == 0) {
+        codePage = 950; // BIG5
+      } else if (strcmp(encoding, "auto") == 0) {
+        codePage = CP_ACP; // 自动检测
+      } else {
+        // 未知编码，默认UTF-8
+        codePage = CP_UTF8;
+      }
     }
   }
 
@@ -2301,6 +2317,7 @@ void cmd_window(int argc, char *argv[]) {
   params->modal = modal;
   params->noDrag = noDrag;
   params->bold = bold;
+  params->codePage = codePage;
 
   // 注册窗口类
   WNDCLASSA wc = {0};
