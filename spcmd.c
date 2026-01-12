@@ -279,14 +279,16 @@ void handle_command(int argc, char *argv[]) {
         } else if (strcmp(command_name, "random") == 0) {
           char *result = cmd_random(argc, resolved_argv);
           if (result != NULL) {
-            // 直接使用printf并确保刷新输出流，不添加换行符
             printf("%s", result);
             fflush(stdout);
             free(result);
-          } else {
-            // 如果random命令返回NULL，确保有适当的输出
-            // 这可能发生在帮助请求或错误情况下
-            // cmd_random函数在这些情况下已经输出了信息，所以这里不需要额外输出
+          }
+        } else if (strcmp(command_name, "clipboard") == 0) {
+          char *result = cmd_clipboard(argc, resolved_argv);
+          if (result != NULL) {
+            printf("%s", result);
+            fflush(stdout);
+            free(result);
           }
         }
       } else {
@@ -4693,8 +4695,8 @@ void free_param_context(ParamContext *context) {
 
 // 剪贴板操作命令
 char *cmd_clipboard(int argc, char *argv[]) {
-  // 检查是否需要帮助
-  if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
+  if (argc > 2 &&
+      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
     printf("Clipboard command usage:\n");
     printf("  spcmd clipboard --get          - Get text from clipboard\n");
     printf("  spcmd clipboard --set=text     - Set text to clipboard\n");
@@ -4706,71 +4708,70 @@ char *cmd_clipboard(int argc, char *argv[]) {
     return NULL;
   }
 
-  ParamDefinition param_defs[] = {{"get", NULL, FALSE, FALSE},
-                                  {"set", NULL, FALSE, FALSE},
-                                  {"clear", NULL, FALSE, FALSE}};
+  BOOL do_get = FALSE;
+  BOOL do_clear = FALSE;
+  BOOL do_set = FALSE;
+  const char *set_text = NULL;
 
-  ParamContext *context = create_param_context(param_defs, 3);
-  if (!context) {
-    printf("Error: Failed to create parameter context\n");
-    return NULL;
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--get") == 0) {
+      do_get = TRUE;
+    } else if (strcmp(argv[i], "--clear") == 0) {
+      do_clear = TRUE;
+    } else if (strncmp(argv[i], "--set=", 6) == 0) {
+      do_set = TRUE;
+      set_text = argv[i] + 6;
+    } else if (strcmp(argv[i], "--set") == 0 && i + 1 < argc) {
+      do_set = TRUE;
+      set_text = argv[i + 1];
+      i++;
+    }
   }
 
-  parse_parameters(context, argc, argv, 2);
-
-  BOOL do_get = is_param_set(context, "get");
-  BOOL do_set = is_param_set(context, "set");
-  BOOL do_clear = is_param_set(context, "clear");
-
-  // 如果没有指定操作，默认get
   if (!do_get && !do_set && !do_clear) {
     do_get = TRUE;
   }
 
-  // 打开剪贴板
+  CoInitialize(NULL);
+
   if (!OpenClipboard(NULL)) {
     printf("Error: Failed to open clipboard\n");
-    free_param_context(context);
+    CoUninitialize();
     return NULL;
   }
 
   char *result = NULL;
 
   if (do_clear) {
-    // 清空剪贴板
     if (EmptyClipboard()) {
       printf("Clipboard cleared successfully\n");
     } else {
       printf("Error: Failed to clear clipboard\n");
     }
   } else if (do_set) {
-    // 设置剪贴板文本
-    const char *text = get_param_value(context, "set");
-    if (!text) {
+    if (!set_text || strlen(set_text) == 0) {
       printf("Error: --set requires a value\n");
       CloseClipboard();
-      free_param_context(context);
+      CoUninitialize();
       return NULL;
     }
 
-    // 计算所需内存（考虑UTF-8到UTF-16转换）
-    int text_len = strlen(text);
-    int wide_len = MultiByteToWideChar(CP_UTF8, 0, text, text_len, NULL, 0);
+    int text_len = strlen(set_text);
+    int wide_len = MultiByteToWideChar(CP_UTF8, 0, set_text, text_len, NULL, 0);
     HGLOBAL hGlob = GlobalAlloc(GMEM_MOVEABLE, (wide_len + 1) * sizeof(wchar_t));
 
     if (!hGlob) {
       printf("Error: Failed to allocate memory\n");
       CloseClipboard();
-      free_param_context(context);
+      CoUninitialize();
       return NULL;
     }
 
     wchar_t *wide_text = (wchar_t *)GlobalLock(hGlob);
-    MultiByteToWideChar(CP_UTF8, 0, text, text_len, wide_text, wide_len);
+    MultiByteToWideChar(CP_UTF8, 0, set_text, text_len, wide_text, wide_len);
     wide_text[wide_len] = L'\0';
     GlobalUnlock(hGlob);
 
-    // 设置剪贴板内容
     if (SetClipboardData(CF_UNICODETEXT, hGlob)) {
       printf("Text set to clipboard successfully\n");
     } else {
@@ -4778,22 +4779,20 @@ char *cmd_clipboard(int argc, char *argv[]) {
       GlobalFree(hGlob);
     }
   } else if (do_get) {
-    // 获取剪贴板文本
     HGLOBAL hGlob = GetClipboardData(CF_UNICODETEXT);
     if (!hGlob) {
       CloseClipboard();
-      free_param_context(context);
+      CoUninitialize();
       return NULL;
     }
 
     wchar_t *wide_text = (wchar_t *)GlobalLock(hGlob);
     if (!wide_text) {
       CloseClipboard();
-      free_param_context(context);
+      CoUninitialize();
       return NULL;
     }
 
-    // 分配结果内存
     int result_len = WideCharToMultiByte(CP_UTF8, 0, wide_text, -1, NULL, 0, NULL, NULL);
     result = (char *)malloc(result_len + 1);
     if (result) {
@@ -4806,6 +4805,6 @@ char *cmd_clipboard(int argc, char *argv[]) {
   }
 
   CloseClipboard();
-  free_param_context(context);
+  CoUninitialize();
   return result;
 }
