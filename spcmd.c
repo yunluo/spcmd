@@ -1050,10 +1050,24 @@ void cmd_task(int argc, char *argv[]) {
     return;
   }
 
-  // Check if file exists
-  if (GetFileAttributesA(programPath) == INVALID_FILE_ATTRIBUTES) {
-    printf("Warning: Program file does not exist: %s\n", programPath);
+  // 尝试创建任务通常需要管理员权限
+  BOOL needAdmin = TRUE;
+
+  // 如果需要管理员权限但当前没有管理员权限，则尝试提升权限
+  if (needAdmin && !IsRunAsAdmin()) {
+    printf("创建计划任务需要管理员权限，正在请求权限提升...\n");
+
+    // 尝试提升权限
+    if (ElevatePrivileges(argc, argv)) {
+      // 如果提升成功，程序会以管理员权限重新运行，当前进程会退出
+      return;
+    } else {
+      // 如果提升失败，询问用户是否继续以普通权限尝试
+      printf("权限提升失败，将以普通权限尝试创建任务...\n");
+    }
   }
+
+  // 检查文件是否存在
 
   printf("Creating scheduled task: %s\n", taskName);
   printf("Program: %s\n", programPath);
@@ -2464,10 +2478,10 @@ BOOL ElevatePrivileges(int argc, char *argv[]) {
   wcscat(szCmdLine, szPath);
   wcscat(szCmdLine, L"\" ");
 
-  // 添加原始参数
+  // 添加原始参数（使用UTF-8编码以支持中文路径）
   for (int i = 1; i < argc; i++) {
     wchar_t argW[512];
-    MultiByteToWideChar(CP_ACP, 0, argv[i], -1, argW, 512);
+    MultiByteToWideChar(CP_UTF8, 0, argv[i], -1, argW, 512);
 
     wcscat(szCmdLine, L"\"");
     wcscat(szCmdLine, argW);
@@ -2861,12 +2875,28 @@ void cmd_config(int argc, char *argv[]) {
       free_ini_data(&data);
     }
   } else if (strcmp(action, "set") == 0) {
-    // 写入INI文件
+    // 写入INI文件 - 尝试写入系统目录需要管理员权限
     if (!hasSection || !hasKey || !hasValue) {
       printf("Error: Section, key, and value must be specified for write "
              "action\n");
 
       return;
+    }
+
+    // 检查是否需要管理员权限（写入系统配置）
+    char systemDir[MAX_PATH];
+    if (GetSystemDirectoryA(systemDir, MAX_PATH) > 0) {
+      if (strncmp(filePath, systemDir, strlen(systemDir)) == 0) {
+        // 目标是系统目录，需要管理员权限
+        if (!IsRunAsAdmin()) {
+          printf("写入系统配置文件需要管理员权限，正在请求权限提升...\n");
+          if (ElevatePrivileges(argc, argv)) {
+            return;
+          } else {
+            printf("权限提升失败，将尝试直接写入...\n");
+          }
+        }
+      }
     }
 
     printf("Writing: [%s] %s = %s\n", section, key, value);
@@ -2932,6 +2962,22 @@ void cmd_config(int argc, char *argv[]) {
       printf("Error: Section and key must be specified for delete action\n");
 
       return;
+    }
+
+    // 检查是否需要管理员权限（删除系统配置）
+    char systemDir[MAX_PATH];
+    if (GetSystemDirectoryA(systemDir, MAX_PATH) > 0) {
+      if (strncmp(filePath, systemDir, strlen(systemDir)) == 0) {
+        // 目标是系统目录，需要管理员权限
+        if (!IsRunAsAdmin()) {
+          printf("删除系统配置文件需要管理员权限，正在请求权限提升...\n");
+          if (ElevatePrivileges(argc, argv)) {
+            return;
+          } else {
+            printf("权限提升失败，将尝试直接删除...\n");
+          }
+        }
+      }
     }
 
     printf("Deleting: [%s] %s\n", section, key);
