@@ -2336,10 +2336,26 @@ void cmd_window(int argc, char *argv[]) {
   int x = (screenWidth - width) / 2;
   int y = (screenHeight - height) / 2;
 
+  // 将UTF-8标题转换为ANSI（用于CreateWindowExA）
+  int titleLen = MultiByteToWideChar(CP_UTF8, 0, title, -1, NULL, 0);
+  wchar_t *wideTitle = (wchar_t *)malloc(titleLen * sizeof(wchar_t));
+  if (wideTitle) {
+    MultiByteToWideChar(CP_UTF8, 0, title, -1, wideTitle, titleLen);
+    int ansiLen = WideCharToMultiByte(CP_ACP, 0, wideTitle, -1, NULL, 0, NULL, NULL);
+    char *ansiTitle = (char *)malloc(ansiLen);
+    if (ansiTitle) {
+      WideCharToMultiByte(CP_ACP, 0, wideTitle, -1, ansiTitle, ansiLen, NULL, NULL);
+      strncpy(title, ansiTitle, sizeof(title) - 1);
+      title[sizeof(title) - 1] = '\0';
+      free(ansiTitle);
+    }
+    free(wideTitle);
+  }
+
   // 创建窗口
   CreateWindowExA(WS_EX_TOPMOST | WS_EX_APPWINDOW, // 强制顶层显示
                   "WindowClass",
-                  title, // 直接使用标题
+                  title, // 使用转换后的ANSI标题
                   noDrag ? (WS_POPUP | WS_SYSMENU | WS_VISIBLE)
                          : // 禁止拖拽时使用弹出窗口样式
                       (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU |
