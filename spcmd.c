@@ -19,9 +19,10 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "ini.h"
 #include "stb_image_write.h"
-#include <objbase.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
+#include <objbase.h>
 #include <psapi.h>    // 添加这个头文件以支持进程信息查询
 #include <shellapi.h> // 添加这个头文件以支持图标提取
 #include <shlobj.h>
@@ -34,7 +35,6 @@
 #include <string.h>
 #include <time.h>     // 添加这个头文件以支持时间函数
 #include <tlhelp32.h> // 添加这个头文件以支持进程操作
-#include <windows.h>
 
 // 资源ID定义
 #define IDI_ICON1 101
@@ -108,6 +108,7 @@ void cmd_tray(int argc, char *argv[]);
 void cmd_floating(int argc, char *argv[]);
 char *cmd_clipboard(int argc, char *argv[]);
 void cmd_timesync(int argc, char *argv[]);
+void cmd_ipc(int argc, char *argv[]);
 
 // Base64 encoding function declaration
 char *base64_encode(const unsigned char *data, size_t input_length,
@@ -139,6 +140,7 @@ Command command_table[] = {
     {"floating", (void (*)(int, char **))cmd_floating, 0},
     {"clipboard", (void (*)(int, char **))cmd_clipboard, 1},
     {"timesync", (void (*)(int, char **))cmd_timesync, 0},
+    {"ipc", (void (*)(int, char **))cmd_ipc, 0},
     {NULL, NULL, 0} // 表结束标记
 };
 void save_as_base64_data(const char *bitmap_data, DWORD data_size,
@@ -178,6 +180,7 @@ typedef struct {
   BOOL noDrag;        // 是否禁止拖拽
   BOOL bold;          // 是否粗体
   UINT codePage;      // 文本编码代码页（CP_UTF8, CP_ACP等）
+  char *onClickCommand; // 点击确认按钮后执行的命令
 } WindowParams;
 
 // WinMain函数：GUI应用程序的入口点
@@ -316,7 +319,7 @@ void handle_command(int argc, char *argv[]) {
     }
   }
 
-  // 处理未知命令
+   // 处理未知命令
   if (!command_found) {
     printf("Unknown command: %s\n", command_name);
   }
@@ -643,20 +646,20 @@ void cmd_shortcut(int argc, char *argv[]) {
   char desktopPath[MAX_PATH];
   HRESULT hr = SHGetFolderPathA(NULL, CSIDL_DESKTOPDIRECTORY, NULL,
                                 SHGFP_TYPE_CURRENT, desktopPath);
-  if (FAILED(hr)) {
-    printf("Error: Unable to get desktop path (hr=0x%08X)\n", hr);
-    CoUninitialize();
-    return;
-  }
+   if (FAILED(hr)) {
+     printf("Error: Unable to get desktop path (hr=0x%08lX)\n", (unsigned long)hr);
+     CoUninitialize();
+     return;
+   }
 
   // Construct shortcut full path
   char shortcutPath[MAX_PATH];
   snprintf(shortcutPath, MAX_PATH, "%s\\%s", desktopPath, finalName);
 
-  // Create shortcut
+   // Create shortcut
   HRESULT hres = CoInitialize(NULL);
   if (FAILED(hres)) {
-    printf("Error: Failed to initialize COM (hr=0x%08X)\n", hres);
+    printf("Error: Failed to initialize COM (hr=0x%08lX)\n", (unsigned long)hres);
     return;
   }
 
@@ -664,11 +667,11 @@ void cmd_shortcut(int argc, char *argv[]) {
   hres = CoCreateInstance(&CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER,
                           &IID_IShellLinkA, (LPVOID *)&pShellLink);
 
-  if (FAILED(hres)) {
-    printf("Error: Unable to create ShellLink object (hr=0x%08X)\n", hres);
-    CoUninitialize();
-    return;
-  }
+   if (FAILED(hres)) {
+     printf("Error: Unable to create ShellLink object (hr=0x%08lX)\n", (unsigned long)hres);
+     CoUninitialize();
+     return;
+   }
 
   if (SUCCEEDED(hres)) {
     // Set target path
@@ -723,17 +726,17 @@ void cmd_shortcut(int argc, char *argv[]) {
       if (SUCCEEDED(hres)) {
         printf("Shortcut created: %s\n", shortcutPath);
       } else {
-        printf("Error: Unable to save shortcut to %s (hr=0x%08X)\n", shortcutPath, hres);
+        printf("Error: Unable to save shortcut to %s (hr=0x%08lX)\n", shortcutPath, (unsigned long)hres);
       }
 
       IPersistFile_Release(pPersistFile);
     } else {
-      printf("Error: Unable to get IPersistFile interface (hr=0x%08X)\n", hres);
+      printf("Error: Unable to get IPersistFile interface (hr=0x%08lX)\n", (unsigned long)hres);
     }
 
     IShellLinkA_Release(pShellLink);
   } else {
-    printf("Error: Unable to create shortcut object (hr=0x%08X)\n", hres);
+    printf("Error: Unable to create shortcut object (hr=0x%08lX)\n", (unsigned long)hres);
   }
 
   CoUninitialize();
@@ -1415,10 +1418,17 @@ void cmd_qboxtop(int argc, char *argv[]) {
   // 解析参数
   parse_parameters(context, argc, argv, 2);
 
-  // 获取参数值
+   // 获取参数值
   const char *message = get_param_value(context, "message");
   const char *title = get_param_value(context, "title");
   const char *program = get_param_value(context, "program");
+
+  // 检查必填参数
+  if (!message || !title || !program) {
+    printf("Error: Missing required parameters\n");
+    free_param_context(context);
+    return;
+  }
 
   // 获取当前活跃窗口句柄，然后在该窗口上显示置顶消息框
   HWND hActiveWnd = GetForegroundWindow();
@@ -1672,9 +1682,8 @@ char *resolve_system_variables(const char *input) {
   size_t out_pos = 0;
   size_t in_pos = 0;
 
-  while (in_pos < input_len) {
-    // 查找变量开始标记 [%
-    if (input[in_pos] == '[' && input[in_pos + 1] == '%') {
+   while (in_pos < input_len) {
+    if (in_pos + 1 < input_len && input[in_pos] == '[' && input[in_pos + 1] == '%') {
       // 查找变量结束标记 %]
       size_t var_start = in_pos + 2;
       size_t var_end = var_start;
@@ -2130,12 +2139,31 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     break;
   }
 
-  case WM_COMMAND: {
+   case WM_COMMAND: {
     if (LOWORD(wParam) == 1) { // 点击了确认按钮
+      // 如果有onClickCommand，执行它
+      if (params && params->onClickCommand && params->onClickCommand[0] != '\0') {
+        printf("Executing on-click command: %s\n", params->onClickCommand);
+        // 使用CreateProcess执行命令，不等待进程完成，隐藏窗口
+        STARTUPINFO si = {0};
+        PROCESS_INFORMATION pi = {0};
+        si.cb = sizeof(si);
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+
+        // 构建命令行
+        char cmdLine[1024];
+        snprintf(cmdLine, sizeof(cmdLine), "cmd /c \"%s\"", params->onClickCommand);
+
+        if (CreateProcess(NULL, cmdLine, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+          CloseHandle(pi.hProcess);
+          CloseHandle(pi.hThread);
+        }
+      }
       DestroyWindow(hwnd);
     }
     break;
-  }
+   }
 
   case WM_SIZE: {
     // 调整按钮位置到窗口底部居中
@@ -2216,10 +2244,12 @@ void cmd_window(int argc, char *argv[]) {
   int fontSize = 18;
   COLORREF bgColor = RGB(255, 255, 255); // 默认白色背景
   COLORREF textColor = RGB(0, 0, 0);     // 默认黑色文字
-  BOOL modal = FALSE;
+   BOOL modal = FALSE;
   BOOL noDrag = FALSE;
   BOOL bold = FALSE;
   BOOL hasText = FALSE;
+  BOOL hasOnClick = FALSE;
+  const char *onClickCommand = NULL;
   UINT codePage = CP_UTF8; // 默认使用UTF-8编码，解决跨地区乱码问题
 
   // 解析所有参数
@@ -2307,22 +2337,25 @@ void cmd_window(int argc, char *argv[]) {
       modal = TRUE;
     } else if (strcmp(argv[i], "--nodrag") == 0) {
       noDrag = TRUE;
-    } else if (strncmp(argv[i], "--encoding=", 11) == 0) {
-      char *encoding = argv[i] + 11;
-      if (strcmp(encoding, "utf8") == 0 || strcmp(encoding, "utf-8") == 0) {
-        codePage = CP_UTF8;
-      } else if (strcmp(encoding, "gbk") == 0 || strcmp(encoding, "gb2312") == 0) {
-        codePage = 936; // GBK
-      } else if (strcmp(encoding, "big5") == 0) {
-        codePage = 950; // BIG5
-      } else if (strcmp(encoding, "auto") == 0) {
-        codePage = CP_ACP; // 自动检测
-      } else {
-        // 未知编码，默认UTF-8
-        codePage = CP_UTF8;
-      }
-    }
-  }
+     } else if (strncmp(argv[i], "--encoding=", 11) == 0) {
+       char *encoding = argv[i] + 11;
+       if (strcmp(encoding, "utf8") == 0 || strcmp(encoding, "utf-8") == 0) {
+         codePage = CP_UTF8;
+       } else if (strcmp(encoding, "gbk") == 0 || strcmp(encoding, "gb2312") == 0) {
+         codePage = 936; // GBK
+       } else if (strcmp(encoding, "big5") == 0) {
+         codePage = 950; // BIG5
+       } else if (strcmp(encoding, "auto") == 0) {
+         codePage = CP_ACP; // 自动检测
+       } else {
+         // 未知编码，默认UTF-8
+         codePage = CP_UTF8;
+       }
+     } else if (strncmp(argv[i], "--onclick=", 10) == 0) {
+       hasOnClick = TRUE;
+       onClickCommand = argv[i] + 10;
+     }
+   }
 
   // Check if required parameters are provided
   if (!hasText) {
@@ -2356,7 +2389,7 @@ void cmd_window(int argc, char *argv[]) {
     return;
   }
 
-  // 初始化参数
+   // 初始化参数
   params->text = processedMessage;
   params->fontSize = fontSize;
   params->bgColor = bgColor;
@@ -2365,6 +2398,16 @@ void cmd_window(int argc, char *argv[]) {
   params->noDrag = noDrag;
   params->bold = bold;
   params->codePage = codePage;
+  params->onClickCommand = NULL;
+
+  if (hasOnClick && onClickCommand) {
+    size_t cmdLen = strlen(onClickCommand);
+    params->onClickCommand = (char*)malloc(cmdLen + 1);
+    if (params->onClickCommand) {
+      strncpy(params->onClickCommand, onClickCommand, cmdLen);
+      params->onClickCommand[cmdLen] = '\0';
+    }
+  }
 
   // 注册窗口类
   WNDCLASSA wc = {0};
@@ -2399,8 +2442,8 @@ void cmd_window(int argc, char *argv[]) {
     free(wideTitle);
   }
 
-  // 创建窗口
-  CreateWindowExA(WS_EX_TOPMOST | WS_EX_APPWINDOW, // 强制顶层显示
+   // 创建窗口
+  HWND hwnd = CreateWindowExA(WS_EX_TOPMOST | WS_EX_APPWINDOW, // 强制顶层显示
                   "WindowClass",
                   title, // 使用转换后的ANSI标题
                   noDrag ? (WS_POPUP | WS_SYSMENU | WS_VISIBLE)
@@ -2409,6 +2452,18 @@ void cmd_window(int argc, char *argv[]) {
                        WS_VISIBLE), // 正常情况显示标题栏
                   x, y, width, height, NULL, NULL, GetModuleHandle(NULL),
                   params);
+
+  if (!hwnd) {
+    printf("Error: Failed to create window, error: %lu\n", GetLastError());
+    DeleteObject((HBRUSH)wc.hbrBackground);
+    UnregisterClassA("WindowClass", GetModuleHandle(NULL));
+    free(params);
+    free(processedMessage);
+    if (modal) {
+      EnumWindows(EnumWindowsProcEnable, (LPARAM)NULL);
+    }
+    return;
+  }
 
   // 消息循环
   MSG msg;
@@ -2420,7 +2475,8 @@ void cmd_window(int argc, char *argv[]) {
     DispatchMessage(&msg);
   }
 
-  // 注销窗口类
+   // 注销窗口类前删除背景画刷
+  DeleteObject((HBRUSH)wc.hbrBackground);
   UnregisterClassA("WindowClass", GetModuleHandle(NULL));
 
   // 如果是模态弹窗，重新启用所有窗口
@@ -2428,7 +2484,10 @@ void cmd_window(int argc, char *argv[]) {
     EnumWindows(EnumWindowsProcEnable, (LPARAM)NULL);
   }
 
-  // 清理资源
+   // 清理资源
+  if (params->onClickCommand) {
+    free(params->onClickCommand);
+  }
   free(params);
   free(processedMessage);
 }
@@ -2525,16 +2584,9 @@ BOOL ElevatePrivileges(int argc, char *argv[]) {
     return FALSE;
   }
 
-  // 等待新进程完成
-  WaitForSingleObject(sei.hProcess, INFINITE);
-  // 获取退出代码
-  DWORD exitCode;
-  GetExitCodeProcess(sei.hProcess, &exitCode);
-
-  // 关闭进程句柄
-  CloseHandle(sei.hProcess);
-  // 退出当前进程
-  ExitProcess(exitCode);
+  // 权限提升成功，新进程已在后台启动
+  printf("管理员权限获取成功，任务正在后台执行...\n");
+  printf("新进程已启动，原始进程将退出\n");
 
   return TRUE;
 }
@@ -2796,6 +2848,9 @@ void free_ini_data(struct IniData *data) {
 // 查找INI条目
 struct IniEntry *find_ini_entry(struct IniData *data, const char *section,
                                 const char *name) {
+  if (!data || !section || !name) {
+    return NULL;
+  }
   struct IniEntry *entry = data->head;
   while (entry) {
     if (strcmp(entry->section, section) == 0 &&
@@ -2949,20 +3004,29 @@ void cmd_config(int argc, char *argv[]) {
       }
     }
 
-    // 写入文件
-    FILE *file = fopen(filePath, "w");
+    // 写入文件（使用UTF-8 BOM编码）
+    FILE *file = fopen(filePath, "wb");
     if (file) {
+      // 写入UTF-8 BOM
+      unsigned char bom[] = {0xEF, 0xBB, 0xBF};
+      fwrite(bom, 1, 3, file);
+
       // 按section分组写入
-      char current_section[256] = {0};
-      struct IniEntry *entry = data.head;
-      while (entry) {
-        if (strcmp(current_section, entry->section) != 0) {
-          // 新section
-          strcpy(current_section, entry->section);
-          fprintf(file, "[%s]\n", current_section);
+      char line[1024];
+      struct IniEntry *write_entry = data.head;
+      while (write_entry) {
+        if (write_entry->section[0] != '\0') {
+          snprintf(line, sizeof(line), "[%s]\n", write_entry->section);
+        } else {
+          snprintf(line, sizeof(line), "\n");
         }
-        fprintf(file, "%s = %s\n", entry->name, entry->value);
-        entry = entry->next;
+        fwrite(line, 1, strlen(line), file);
+
+        if (write_entry->name[0] != '\0') {
+          snprintf(line, sizeof(line), "%s = %s\n", write_entry->name, write_entry->value);
+          fwrite(line, 1, strlen(line), file);
+        }
+        write_entry = write_entry->next;
       }
       fclose(file);
       printf("Configuration saved successfully\n");
@@ -3033,20 +3097,29 @@ void cmd_config(int argc, char *argv[]) {
       return;
     }
 
-    // 写入文件
-    FILE *file = fopen(filePath, "w");
+     // 写入文件（使用UTF-8 BOM编码）
+    FILE *file = fopen(filePath, "wb");
     if (file) {
+      // 写入UTF-8 BOM
+      unsigned char bom[] = {0xEF, 0xBB, 0xBF};
+      fwrite(bom, 1, 3, file);
+
       // 按section分组写入
-      char current_section[256] = {0};
-      entry = data.head;
-      while (entry) {
-        if (strcmp(current_section, entry->section) != 0) {
-          // 新section
-          strcpy(current_section, entry->section);
-          fprintf(file, "[%s]\n", current_section);
+      char line[1024];
+      struct IniEntry *write_entry = data.head;
+      while (write_entry) {
+        if (write_entry->section[0] != '\0') {
+          snprintf(line, sizeof(line), "[%s]\n", write_entry->section);
+        } else {
+          snprintf(line, sizeof(line), "\n");
         }
-        fprintf(file, "%s = %s\n", entry->name, entry->value);
-        entry = entry->next;
+        fwrite(line, 1, strlen(line), file);
+
+        if (write_entry->name[0] != '\0') {
+          snprintf(line, sizeof(line), "%s = %s\n", write_entry->name, write_entry->value);
+          fwrite(line, 1, strlen(line), file);
+        }
+        write_entry = write_entry->next;
       }
       fclose(file);
       printf("Configuration saved successfully\n");
@@ -3426,11 +3499,15 @@ uint64_t generate_snowflake_id(snowflake_generator *sf) {
   // 如果同一毫秒内，序列号递增
   if (timestamp == sf->last_timestamp) {
     sf->sequence = (sf->sequence + 1) & 0xFFF; // 12位序列号
-    // 如果序列号溢出，等待下一毫秒
     if (sf->sequence == 0) {
+      uint64_t wait_count = 0;
       while (timestamp <= sf->last_timestamp) {
-        Sleep(1); // 等待1毫秒
+        Sleep(1);
         timestamp = get_current_timestamp_ms();
+        wait_count++;
+        if (wait_count > 1000) {
+          break;
+        }
       }
     }
   } else {
@@ -3829,9 +3906,10 @@ BOOL create_tray_icon(TrayIconData *trayData, HINSTANCE hInstance,
                      WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
                      CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, hInstance, NULL);
 
-  if (!trayData->hwnd) {
+   if (!trayData->hwnd) {
+    UnregisterClass("SPCMDTrayIconClass", GetModuleHandle(NULL));
     return FALSE;
-  }
+   }
 
   // 保存窗口实例数据
   SetWindowLongPtr(trayData->hwnd, GWLP_USERDATA, (LONG_PTR)trayData);
@@ -3884,15 +3962,15 @@ BOOL create_tray_icon(TrayIconData *trayData, HINSTANCE hInstance,
   }
 
   // 添加托盘图标 - XP兼容版本
-  if (!Shell_NotifyIcon(NIM_ADD, &trayData->nid)) {
-    // 清理资源
+   if (!Shell_NotifyIcon(NIM_ADD, &trayData->nid)) {
     if (trayData->hIcon != NULL &&
         trayData->hIcon != LoadIcon(NULL, IDI_APPLICATION)) {
       DestroyIcon(trayData->hIcon);
     }
     DestroyWindow(trayData->hwnd);
+    UnregisterClass("SPCMDTrayIconClass", GetModuleHandle(NULL));
     return FALSE;
-  }
+   }
 
   // 保存菜单命令
   trayData->menu_commands = menu_commands;
@@ -4179,18 +4257,23 @@ LRESULT CALLBACK FloatingWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     break;
   }
 
-  case WM_TIMER: {
-    // 定时更新进程状态
+   case WM_TIMER: {
+    if (!floatingData) {
+      break;
+    }
     floatingData->process_running =
         is_process_running(floatingData->process_name);
     if (!floatingData->process_running) {
-      // 进程未运行，退出程序
       PostMessage(hwnd, WM_DESTROY, 0, 0);
     }
     break;
-  }
+   }
 
-  case WM_DESTROY: {
+   case WM_DESTROY: {
+    if (!floatingData) {
+      PostQuitMessage(0);
+      break;
+    }
     // 清理资源
     KillTimer(hwnd, 1);
 
@@ -4921,18 +5004,159 @@ char *cmd_clipboard(int argc, char *argv[]) {
   return result;
 }
 
+// IPC通信命令 - 支持环境变量、命名管道、TCP Socket
+void cmd_ipc(int argc, char *argv[]) {
+  char action[32] = "setenv";  // 默认操作
+  char name[256] = "";
+  char value[1024] = "";
+  char host[64] = "127.0.0.1";
+  int port = 0;
+  BOOL hasName = FALSE;
+  BOOL hasValue = FALSE;
+
+  // 解析参数
+  for (int i = 2; i < argc; i++) {
+    if (strncmp(argv[i], "--action=", 9) == 0) {
+      strncpy(action, argv[i] + 9, sizeof(action) - 1);
+      action[sizeof(action) - 1] = '\0';
+    } else if (strncmp(argv[i], "--name=", 7) == 0) {
+      strncpy(name, argv[i] + 7, sizeof(name) - 1);
+      name[sizeof(name) - 1] = '\0';
+      hasName = TRUE;
+    } else if (strncmp(argv[i], "--value=", 8) == 0) {
+      strncpy(value, argv[i] + 8, sizeof(value) - 1);
+      value[sizeof(value) - 1] = '\0';
+      hasValue = TRUE;
+    } else if (strncmp(argv[i], "--host=", 7) == 0) {
+       strncpy(host, argv[i] + 7, sizeof(host) - 1);
+      host[sizeof(host) - 1] = '\0';
+    } else if (strncmp(argv[i], "--port=", 7) == 0) {
+      port = atoi(argv[i] + 7);
+    } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "--h") == 0) {
+      printf("IPC (Inter-Process Communication) command usage:\n\n");
+      printf("Environment variables (简单方式):\n");
+      printf("  spcmd ipc --action=setenv --name=KEY --value=VALUE   - 设置环境变量\n");
+      printf("  spcmd ipc --action=getenv --name=KEY                 - 获取环境变量\n\n");
+      printf("Named pipe (需要对方监听):\n");
+      printf("  spcmd ipc --action=pipe --name=pipe_name --value=VALUE  - 发送消息到命名管道\n\n");
+      printf("TCP Socket (需要对方监听):\n");
+      printf("  spcmd ipc --action=send --host=127.0.0.1 --port=9999 --value=VALUE  - 发送TCP消息\n\n");
+      printf("Examples:\n");
+      printf("  spcmd ipc --action=setenv --name=MYDATA --value=hello\n");
+      printf("  spcmd ipc --action=getenv --name=MYDATA\n");
+      printf("  spcmd ipc --action=send --host=127.0.0.1 --port=9999 --value=hello\n");
+      return;
+    }
+  }
+
+  if (strcmp(action, "setenv") == 0) {
+    // 设置环境变量
+    if (!hasName) {
+      printf("Error: --name is required for setenv action\n");
+      return;
+    }
+    if (!hasValue) {
+      printf("Error: --value is required for setenv action\n");
+      return;
+    }
+    if (SetEnvironmentVariableA(name, value)) {
+      printf("Environment variable set: %s=%s\n", name, value);
+    } else {
+      printf("Error: Failed to set environment variable, error: %lu\n", GetLastError());
+    }
+  } else if (strcmp(action, "getenv") == 0) {
+    // 获取环境变量
+    if (!hasName) {
+      printf("Error: --name is required for getenv action\n");
+      return;
+    }
+    char buffer[1024] = {0};
+    DWORD size = sizeof(buffer);
+    if (GetEnvironmentVariableA(name, buffer, size)) {
+      printf("%s\n", buffer);
+    } else {
+      printf("Error: Environment variable '%s' not found\n", name);
+    }
+  } else if (strcmp(action, "pipe") == 0) {
+    // 发送消息到命名管道
+    if (!hasName) {
+      printf("Error: --name is required for pipe action\n");
+      return;
+    }
+    if (!hasValue) {
+      printf("Error: --value is required for pipe action\n");
+      return;
+    }
+    char pipePath[512];
+    snprintf(pipePath, sizeof(pipePath), "\\\\.\\pipe\\%s", name);
+    HANDLE hPipe = CreateFileA(pipePath, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    if (hPipe == INVALID_HANDLE_VALUE) {
+      printf("Error: Cannot connect to pipe '%s', error: %lu\n", name, GetLastError());
+      return;
+    }
+    DWORD written;
+    if (WriteFile(hPipe, value, strlen(value), &written, NULL)) {
+      printf("Message sent to pipe '%s': %s\n", name, value);
+    } else {
+      printf("Error: Failed to write to pipe, error: %lu\n", GetLastError());
+    }
+    CloseHandle(hPipe);
+  } else if (strcmp(action, "send") == 0) {
+    // TCP发送消息
+    if (port <= 0) {
+      printf("Error: --port is required for send action\n");
+      return;
+    }
+    if (!hasValue) {
+      printf("Error: --value is required for send action\n");
+      return;
+    }
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+      printf("Error: Failed to initialize Winsock\n");
+      return;
+    }
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock == INVALID_SOCKET) {
+      printf("Error: Failed to create socket\n");
+      WSACleanup();
+      return;
+    }
+    struct sockaddr_in server;
+    server.sin_family = AF_INET;
+    server.sin_addr.s_addr = inet_addr(host);
+    server.sin_port = htons(port);
+    if (connect(sock, (struct sockaddr*)&server, sizeof(server)) == SOCKET_ERROR) {
+      printf("Error: Cannot connect to %s:%d, error: %d\n", host, port, WSAGetLastError());
+      closesocket(sock);
+      WSACleanup();
+      return;
+    }
+    if (send(sock, value, strlen(value), 0) == SOCKET_ERROR) {
+      printf("Error: Failed to send data, error: %d\n", WSAGetLastError());
+      closesocket(sock);
+      WSACleanup();
+      return;
+    } else {
+      printf("Message sent to %s:%d: %s\n", host, port, value);
+    }
+    closesocket(sock);
+    WSACleanup();
+  } else {
+    printf("Error: Unknown action '%s'. Use --help for usage.\n", action);
+  }
+}
+
 // NTP时间同步命令
 void cmd_timesync(int argc, char *argv[]) {
   // 默认NTP服务器
   char serverIP[64] = "time.windows.com";
-  BOOL hasServer = FALSE;
 
   // 解析参数
   for (int i = 2; i < argc; i++) {
     if (strncmp(argv[i], "--server=", 9) == 0) {
       strncpy(serverIP, argv[i] + 9, sizeof(serverIP) - 1);
       serverIP[sizeof(serverIP) - 1] = '\0';
-      hasServer = TRUE;
     } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "--h") == 0) {
       printf("Time synchronization command usage:\n");
       printf("  spcmd timesync                 - Sync time using default server\n");

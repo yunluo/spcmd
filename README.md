@@ -2,22 +2,30 @@
 
 SPCMD是一个功能强大的Windows系统命令行工具，提供了多种系统管理和用户交互功能。
 
+## 版本
+
+**当前版本: 7.4.0.0**
+
 ## 功能特性
 
 - **屏幕截图**: 捕获屏幕截图并保存为多种格式
 - **快捷方式创建**: 创建桌面快捷方式
 - **开机自启配置**: 配置程序开机自动启动
 - **信息弹窗**: 显示各种类型的信息弹窗
-- **自定义窗口**: 创建具有高级功能的自定义窗口
+- **自定义窗口**: 创建具有高级功能的自定义窗口（支持点击确认后执行命令）
 - **程序执行**: 执行应用程序并指定工作目录
 - **计划任务**: 创建Windows计划任务
 - **进程重启**: 重启指定的进程
 - **系统通知**: 显示系统通知
-- **配置文件管理**: 管理INI配置文件
+- **配置文件管理**: 管理INI配置文件（支持UTF-8 BOM编码）
 - **进程管理**: 检查和终止系统进程
 - **随机数生成**: 生成各种类型的随机ID
 - **日志轮转**: 日志文件轮转切割
 - **系统托盘图标**: 创建系统托盘图标
+- **浮动图标**: 创建浮动图标监控进程
+- **剪贴板管理**: 读取和写入剪贴板内容
+- **时间同步**: 通过NTP同步系统时间
+- **进程间通信**: 支持环境变量、命名管道、TCP Socket通信
 
 ## 安装
 
@@ -134,7 +142,7 @@ spcmd qboxtop --message="Do you want to run the calculator?" --title="Question" 
 
 #### 自定义窗口
 ```bash
-spcmd window --text=message [--title=title] [--width=width] [--height=height] [--fontsize=size] [--bgcolor=color] [--textcolor=color] [--bold] [--modal] [--nodrag]
+spcmd window --text=message [--title=title] [--width=width] [--height=height] [--fontsize=size] [--bgcolor=color] [--textcolor=color] [--bold] [--modal] [--nodrag] [--onclick=command]
 ```
 
 参数说明:
@@ -148,6 +156,7 @@ spcmd window --text=message [--title=title] [--width=width] [--height=height] [-
 - `--bold` - 设置文本为粗体
 - `--modal` - 设置窗口为模态窗口（阻塞其他窗口直到关闭并启用强制交互）
 - `--nodrag` - 禁止窗口拖拽
+- `--onclick=command` - 点击确认按钮后执行的命令
 
 示例:
 ```bash
@@ -159,6 +168,8 @@ spcmd window --text="Bold text example" --bold
 spcmd window --text="Modal window with forced interaction" --modal
 spcmd window --text="你好，世界！" --fontsize=24
 spcmd window --text="你好，世界！" --textcolor=blue
+spcmd window --text="确认后打开计算器" --onclick="calc.exe"
+spcmd window --text="确认后执行备份" --onclick="backup.bat"
 ```
 
 #### 程序执行
@@ -362,6 +373,65 @@ spcmd floating --process=python.exe --menu="Open Notepad,notepad.exe" --menu="Op
 spcmd floating --process=explorer.exe --menu="Open Logs,explorer.exe .\logs" --menu="Open Command Prompt,cmd.exe"
 ```
 
+#### 剪贴板管理
+```bash
+spcmd clipboard [--action=get|set] [--value=text]
+```
+
+参数说明:
+- `--action=action` - 操作：get, set（默认：get）
+- `--value=text` - 要设置的文本（set操作必需）
+
+示例:
+```bash
+spcmd clipboard --action=get
+spcmd clipboard --action=set --value="Hello World"
+```
+
+#### 时间同步
+```bash
+spcmd timesync [--server=ntp_server]
+```
+
+参数说明:
+- `--server=ntp_server` - NTP服务器地址（默认：time.windows.com）
+
+示例:
+```bash
+spcmd timesync
+spcmd timesync --server=time.windows.com
+spcmd timesync --server=192.168.1.1
+```
+
+#### 进程间通信（IPC）
+```bash
+spcmd ipc --action=setenv|getenv|pipe|send [--name=key|pipe_name] [--value=data] [--host=ip] [--port=port]
+```
+
+参数说明:
+- `--action=action` - 操作类型：
+  - `setenv` - 设置环境变量
+  - `getenv` - 获取环境变量
+  - `pipe` - 发送消息到命名管道
+  - `send` - 发送TCP消息
+- `--name=key` - 环境变量名称或管道名称
+- `--value=data` - 要发送的数据
+- `--host=ip` - 目标IP地址（send操作必需）
+- `--port=port` - 目标端口（send操作必需）
+
+示例:
+```bash
+# 环境变量方式
+spcmd ipc --action=setenv --name=MYAPP_DATA --value="hello"
+spcmd ipc --action=getenv --name=MYAPP_DATA
+
+# 命名管道方式（需要对方监听）
+spcmd ipc --action=pipe --name=myapp_pipe --value="hello"
+
+# TCP Socket方式（需要对方监听）
+spcmd ipc --action=send --host=127.0.0.1 --port=9999 --value="hello"
+```
+
 ## 示例
 
 ```bash
@@ -376,6 +446,9 @@ spcmd infoboxtop --message="Hello World" --title="Greeting"
 
 # 创建自定义窗口
 spcmd window --text="Welcome to SPCMD!" --title="SPCMD Window" --bgcolor=lightblue --textcolor=blue --bold
+
+# 创建窗口并点击确认后执行命令
+spcmd window --text="确认后打开计算器" --onclick="calc.exe"
 
 # 执行程序
 spcmd process --action=run --exec="notepad.exe test.txt" --workdir=C:\temp
@@ -394,6 +467,20 @@ spcmd tray --process=notepad.exe --title="Notepad Monitor"
 
 # 创建浮动图标
 spcmd floating --process=notepad.exe --title="Notepad Monitor"
+
+# 剪贴板操作
+spcmd clipboard --action=get
+spcmd clipboard --action=set --value="Hello World"
+
+# 时间同步
+spcmd timesync --server=time.windows.com
+
+# 进程间通信 - 环境变量
+spcmd ipc --action=setenv --name=MYAPP_DATA --value="hello"
+spcmd ipc --action=getenv --name=MYAPP_DATA
+
+# 进程间通信 - TCP
+spcmd ipc --action=send --host=127.0.0.1 --port=9999 --value="hello"
 ```
 
 ## 构建
@@ -432,3 +519,27 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## 更新日志
+
+### v7.4.0.0 (2026-01)
+- **新增IPC进程间通信功能**
+  - 环境变量方式（setenv/getenv）
+  - 命名管道方式（pipe）
+  - TCP Socket方式（send）
+- **自定义窗口新增--onclick参数**
+  - 点击确认按钮后执行自定义命令
+  - 命令静默执行，不显示黑窗口
+- **INI配置文件支持UTF-8 BOM编码**
+- **修复多项Bug**
+  - 修复开机自启权限提升卡死问题
+  - 修复窗口创建失败资源泄漏
+  - 修复各种潜在内存泄漏
+- **代码优化**
+  - 清理死代码
+  - 修复编译警告
+- **文档更新**
+
+### v7.3.0.0
+- 初始版本发布
+- 基础功能完善

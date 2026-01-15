@@ -276,9 +276,26 @@ int ini_parse(const char* filename, ini_handler handler, void* user)
     FILE* file;
     int error;
 
-    file = fopen(filename, "r");
+    unsigned char bom[3] = {0};
+    file = fopen(filename, "rb");
     if (!file)
         return -1;
+
+    // 检测UTF-8 BOM
+    size_t bom_read = fread(bom, 1, 3, file);
+    int has_bom = (bom_read == 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF);
+
+    // 如果有BOM，回退到文件开头继续使用二进制模式
+    if (has_bom) {
+        rewind(file);
+    } else {
+        // 如果没有BOM，关闭并使用ANSI模式重新打开
+        fclose(file);
+        file = fopen(filename, "r");
+        if (!file)
+            return -1;
+    }
+
     error = ini_parse_file(file, handler, user);
     fclose(file);
     return error;
