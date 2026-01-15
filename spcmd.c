@@ -39,6 +39,10 @@
 // 资源ID定义
 #define IDI_ICON1 101
 
+// 开机自启目录 GUID (Windows Vista+)
+static const GUID FOLDERID_CommonStartup = {0xB97D20BB, 0xF46A, 0x4C97, {0xBA, 0x10, 0x5E, 0x36, 0x08, 0x43, 0xEC, 0xC3}};
+static const GUID FOLDERID_Startup = {0xB97D20BB, 0xF46A, 0x4C97, {0xBA, 0x10, 0x5E, 0x36, 0x08, 0x42, 0xEC, 0xC3}};
+
 // 参数定义结构体
 typedef struct {
   const char *name;  // 参数名称
@@ -106,7 +110,6 @@ char *cmd_random(int argc, char *argv[]);
 void cmd_logrotate(int argc, char *argv[]);
 void cmd_tray(int argc, char *argv[]);
 void cmd_floating(int argc, char *argv[]);
-char *cmd_clipboard(int argc, char *argv[]);
 void cmd_timesync(int argc, char *argv[]);
 void cmd_ipc(int argc, char *argv[]);
 
@@ -138,7 +141,6 @@ Command command_table[] = {
     {"logrotate", (void (*)(int, char **))cmd_logrotate, 0},
     {"tray", (void (*)(int, char **))cmd_tray, 0},
     {"floating", (void (*)(int, char **))cmd_floating, 0},
-    {"clipboard", (void (*)(int, char **))cmd_clipboard, 1},
     {"timesync", (void (*)(int, char **))cmd_timesync, 0},
     {"ipc", (void (*)(int, char **))cmd_ipc, 0},
     {NULL, NULL, 0} // 表结束标记
@@ -160,6 +162,9 @@ typedef struct {
 // 添加权限检查和提升权限的函数声明
 BOOL IsRunAsAdmin();
 BOOL ElevatePrivileges(int argc, char *argv[]);
+
+// 兼容XP/Vista/7/10/11获取开机自启目录
+BOOL GetStartupPath(BOOL forAllUsers, char *path, int pathSize);
 
 // 通用进程查找和终止函数声明
 int find_process_by_name(const char *processName, DWORD *processId);
@@ -297,13 +302,6 @@ void handle_command(int argc, char *argv[]) {
           }
         } else if (strcmp(command_name, "random") == 0) {
           char *result = cmd_random(argc, resolved_argv);
-          if (result != NULL) {
-            printf("%s", result);
-            fflush(stdout);
-            free(result);
-          }
-        } else if (strcmp(command_name, "clipboard") == 0) {
-          char *result = cmd_clipboard(argc, resolved_argv);
           if (result != NULL) {
             printf("%s", result);
             fflush(stdout);
@@ -805,17 +803,21 @@ void cmd_autorun(int argc, char *argv[]) {
   char finalName[MAX_PATH];
   snprintf(finalName, MAX_PATH, "%s.lnk", entryName);
 
-  // Try to use system startup directory first (requires admin rights)
+  // 根据权限选择开机自启目录（兼容XP/Vista/7/10/11）
   char startupPath[MAX_PATH];
-  BOOL useSystemStartup = TRUE;
+  BOOL useSystemStartup = IsRunAsAdmin();
 
-  // Get system startup directory
-  if (FAILED(SHGetFolderPathA(NULL, CSIDL_COMMON_STARTUP, NULL,
-                              SHGFP_TYPE_CURRENT, startupPath))) {
-    // Fall back to user startup directory
-    useSystemStartup = FALSE;
-    if (FAILED(SHGetFolderPathA(NULL, CSIDL_STARTUP, NULL, SHGFP_TYPE_CURRENT,
-                                startupPath))) {
+  if (useSystemStartup) {
+    // 管理员权限：使用系统开机自启目录
+    if (!GetStartupPath(TRUE, startupPath, MAX_PATH)) {
+      printf("无法获取系统开机自启目录，回退到用户开机自启\n");
+      useSystemStartup = FALSE;
+    }
+  }
+
+  // 非管理员权限或获取系统目录失败：使用用户开机自启目录
+  if (!useSystemStartup) {
+    if (!GetStartupPath(FALSE, startupPath, MAX_PATH)) {
       printf("Error: Unable to get startup directory\n");
       return;
     }
@@ -846,8 +848,7 @@ void cmd_autorun(int argc, char *argv[]) {
       if (useSystemStartup) {
         // Try user startup directory
         char userStartupPath[MAX_PATH];
-        if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_STARTUP, NULL,
-                                       SHGFP_TYPE_CURRENT, userStartupPath))) {
+        if (GetStartupPath(FALSE, userStartupPath, MAX_PATH)) {
           snprintf(alternativePath, MAX_PATH, "%s\\%s", userStartupPath,
                    finalName);
           if (DeleteFileA(alternativePath)) {
@@ -859,9 +860,7 @@ void cmd_autorun(int argc, char *argv[]) {
       } else {
         // Try system startup directory
         char systemStartupPath[MAX_PATH];
-        if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_COMMON_STARTUP, NULL,
-                                       SHGFP_TYPE_CURRENT,
-                                       systemStartupPath))) {
+        if (GetStartupPath(TRUE, systemStartupPath, MAX_PATH)) {
           snprintf(alternativePath, MAX_PATH, "%s\\%s", systemStartupPath,
                    finalName);
           if (DeleteFileA(alternativePath)) {
@@ -885,34 +884,6 @@ void cmd_autorun(int argc, char *argv[]) {
     }
   } else {
     // Add or update autorun entry (create shortcut)
-
-    // 检查是否需要管理员权限来创建系统开机自启项
-    BOOL needAdmin = useSystemStartup;
-
-    // 如果需要管理员权限但当前没有管理员权限，则尝试提升权限
-    if (needAdmin && !IsRunAsAdmin()) {
-      printf("需要管理员权限来创建系统开机自启项，正在请求权限提升...\n");
-
-      // 尝试提升权限
-      if (ElevatePrivileges(argc, argv)) {
-        // 如果提升成功，程序会以管理员权限重新运行，当前进程会退出
-        return;
-      } else {
-        // 如果提升失败，回退到用户开机自启
-        printf("权限提升失败，回退到用户开机自启...\n");
-        useSystemStartup = FALSE;
-
-        // 重新获取用户启动目录
-        if (FAILED(SHGetFolderPathA(NULL, CSIDL_STARTUP, NULL,
-                                    SHGFP_TYPE_CURRENT, startupPath))) {
-          printf("Error: Unable to get user startup directory\n");
-          return;
-        }
-
-        // 重新构造快捷方式路径
-        snprintf(shortcutPath, MAX_PATH, "%s\\%s", startupPath, finalName);
-      }
-    }
 
     CoInitialize(NULL);
 
@@ -1765,9 +1736,6 @@ char *resolve_system_variables(const char *input) {
             if (env_value) {
               var_value = _strdup(env_value);
             }
-          } else if (strcmp(var_name, "clipboard") == 0) {
-            // 简单实现：返回固定文本
-            var_value = _strdup("clipboard_content");
           }
 
           // 如果找到了变量值，则替换
@@ -2141,10 +2109,10 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
 
    case WM_COMMAND: {
     if (LOWORD(wParam) == 1) { // 点击了确认按钮
-      // 如果有onClickCommand，执行它
+       // 如果有onClickCommand，执行它
       if (params && params->onClickCommand && params->onClickCommand[0] != '\0') {
         printf("Executing on-click command: %s\n", params->onClickCommand);
-        // 使用CreateProcess执行命令，不等待进程完成，隐藏窗口
+        // 使用CreateProcess执行命令，不等待进程完成
         STARTUPINFO si = {0};
         PROCESS_INFORMATION pi = {0};
         si.cb = sizeof(si);
@@ -2537,10 +2505,62 @@ Cleanup:
   return fIsRunAsAdmin;
 }
 
+// 兼容Windows XP/Vista/7/10/11获取开机自启目录
+BOOL GetStartupPath(BOOL forAllUsers, char *path, int pathSize) {
+  OSVERSIONINFO osvi;
+  osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+  GetVersionEx(&osvi);
+
+  if (forAllUsers) {
+    // Windows Vista+ 使用新的API
+    if (osvi.dwMajorVersion >= 6) {
+      typedef HRESULT(WINAPI * PFN_SHGetKnownFolderPath)(REFKNOWNFOLDERID, DWORD, HANDLE, PWSTR *);
+      PFN_SHGetKnownFolderPath pfnSHGetKnownFolderPath = (PFN_SHGetKnownFolderPath)
+        GetProcAddress(GetModuleHandleW(L"shell32.dll"), "SHGetKnownFolderPath");
+      if (pfnSHGetKnownFolderPath) {
+        PWSTR pwStr = NULL;
+        HRESULT hr = pfnSHGetKnownFolderPath((REFKNOWNFOLDERID)&FOLDERID_CommonStartup, 0, NULL, &pwStr);
+        if (SUCCEEDED(hr) && pwStr) {
+          WideCharToMultiByte(CP_ACP, 0, pwStr, -1, path, pathSize, NULL, NULL);
+          CoTaskMemFree(pwStr);
+          return TRUE;
+        }
+      }
+    }
+    // Windows XP 使用旧API
+    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_COMMON_STARTUP, NULL,
+                                    SHGFP_TYPE_CURRENT, path))) {
+      return TRUE;
+    }
+  } else {
+    // Windows Vista+ 使用新的API
+    if (osvi.dwMajorVersion >= 6) {
+      typedef HRESULT(WINAPI * PFN_SHGetKnownFolderPath)(REFKNOWNFOLDERID, DWORD, HANDLE, PWSTR *);
+      PFN_SHGetKnownFolderPath pfnSHGetKnownFolderPath = (PFN_SHGetKnownFolderPath)
+        GetProcAddress(GetModuleHandleW(L"shell32.dll"), "SHGetKnownFolderPath");
+      if (pfnSHGetKnownFolderPath) {
+        PWSTR pwStr = NULL;
+        HRESULT hr = pfnSHGetKnownFolderPath((REFKNOWNFOLDERID)&FOLDERID_Startup, 0, NULL, &pwStr);
+        if (SUCCEEDED(hr) && pwStr) {
+          WideCharToMultiByte(CP_ACP, 0, pwStr, -1, path, pathSize, NULL, NULL);
+          CoTaskMemFree(pwStr);
+          return TRUE;
+        }
+      }
+    }
+    // Windows XP 使用旧API
+    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_STARTUP, NULL,
+                                    SHGFP_TYPE_CURRENT, path))) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
 // 提升权限并重新运行程序
 BOOL ElevatePrivileges(int argc, char *argv[]) {
   wchar_t szPath[MAX_PATH];
-  wchar_t szCmdLine[1024] = {0};
+  wchar_t szCmdLine[2048] = {0};
 
   // 获取当前程序路径
   if (!GetModuleFileNameW(NULL, szPath, MAX_PATH)) {
@@ -2562,7 +2582,10 @@ BOOL ElevatePrivileges(int argc, char *argv[]) {
     wcscat(szCmdLine, L"\" ");
   }
 
-  // 初始化SHELLEXECUTEINFO结构
+  // 添加 --once 标记，防止重复提权
+  wcscat(szCmdLine, L"--once ");
+
+   // 初始化SHELLEXECUTEINFO结构
   SHELLEXECUTEINFOW sei = {0};
   sei.cbSize = sizeof(SHELLEXECUTEINFOW);
   sei.lpVerb = L"runas"; // 请求提升权限
@@ -2570,7 +2593,6 @@ BOOL ElevatePrivileges(int argc, char *argv[]) {
   sei.lpParameters = szCmdLine + wcslen(szPath) + 3; // 跳过程序路径部分
   sei.hwnd = NULL;
   sei.nShow = SW_NORMAL;
-  sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
   // 尝试以管理员权限运行
   if (!ShellExecuteExW(&sei)) {
@@ -4883,268 +4905,87 @@ void free_param_context(ParamContext *context) {
       }
     }
     free(context->params);
-  }
+}
 
   free(context);
 }
 
-// 剪贴板操作命令
-char *cmd_clipboard(int argc, char *argv[]) {
-  if (argc > 2 &&
-      (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Clipboard command usage:\n");
-    printf("  spcmd clipboard --get          - Get text from clipboard\n");
-    printf("  spcmd clipboard --set=text     - Set text to clipboard\n");
-    printf("  spcmd clipboard --clear        - Clear clipboard\n\n");
-    printf("Examples:\n");
-    printf("  spcmd clipboard --get\n");
-    printf("  spcmd clipboard --set=Hello World\n");
-    printf("  spcmd clipboard --clear\n");
-    return NULL;
-  }
-
-  BOOL do_get = FALSE;
-  BOOL do_clear = FALSE;
-  BOOL do_set = FALSE;
-  const char *set_text = NULL;
-
-  for (int i = 2; i < argc; i++) {
-    if (strcmp(argv[i], "--get") == 0) {
-      do_get = TRUE;
-    } else if (strcmp(argv[i], "--clear") == 0) {
-      do_clear = TRUE;
-    } else if (strncmp(argv[i], "--set=", 6) == 0) {
-      do_set = TRUE;
-      set_text = argv[i] + 6;
-    } else if (strcmp(argv[i], "--set") == 0 && i + 1 < argc) {
-      do_set = TRUE;
-      set_text = argv[i + 1];
-      i++;
-    }
-  }
-
-  if (!do_get && !do_set && !do_clear) {
-    do_get = TRUE;
-  }
-
-  CoInitialize(NULL);
-
-  if (!OpenClipboard(NULL)) {
-    printf("Error: Failed to open clipboard\n");
-    CoUninitialize();
-    return NULL;
-  }
-
-  char *result = NULL;
-
-  if (do_clear) {
-    if (EmptyClipboard()) {
-      printf("Clipboard cleared successfully\n");
-    } else {
-      printf("Error: Failed to clear clipboard\n");
-    }
-  } else if (do_set) {
-    if (!set_text || strlen(set_text) == 0) {
-      printf("Error: --set requires a value\n");
-      CloseClipboard();
-      CoUninitialize();
-      return NULL;
-    }
-
-    int text_len = strlen(set_text);
-    int wide_len = MultiByteToWideChar(CP_UTF8, 0, set_text, text_len, NULL, 0);
-    HGLOBAL hGlob = GlobalAlloc(GMEM_MOVEABLE, (wide_len + 1) * sizeof(wchar_t));
-
-    if (!hGlob) {
-      printf("Error: Failed to allocate memory\n");
-      CloseClipboard();
-      CoUninitialize();
-      return NULL;
-    }
-
-    wchar_t *wide_text = (wchar_t *)GlobalLock(hGlob);
-    MultiByteToWideChar(CP_UTF8, 0, set_text, text_len, wide_text, wide_len);
-    wide_text[wide_len] = L'\0';
-    GlobalUnlock(hGlob);
-
-    if (SetClipboardData(CF_UNICODETEXT, hGlob)) {
-      printf("Text set to clipboard successfully\n");
-    } else {
-      printf("Error: Failed to set clipboard data\n");
-      GlobalFree(hGlob);
-    }
-  } else if (do_get) {
-    HGLOBAL hGlob = GetClipboardData(CF_UNICODETEXT);
-    if (!hGlob) {
-      CloseClipboard();
-      CoUninitialize();
-      return NULL;
-    }
-
-    wchar_t *wide_text = (wchar_t *)GlobalLock(hGlob);
-    if (!wide_text) {
-      CloseClipboard();
-      CoUninitialize();
-      return NULL;
-    }
-
-    int result_len = WideCharToMultiByte(CP_UTF8, 0, wide_text, -1, NULL, 0, NULL, NULL);
-    result = (char *)malloc(result_len + 1);
-    if (result) {
-      WideCharToMultiByte(CP_UTF8, 0, wide_text, -1, result, result_len, NULL, NULL);
-      result[result_len] = '\0';
-      printf("%s\n", result);
-    }
-
-    GlobalUnlock(hGlob);
-  }
-
-  CloseClipboard();
-  CoUninitialize();
-  return result;
-}
-
-// IPC通信命令 - 支持环境变量、命名管道、TCP Socket
+// TCP Socket通信命令
 void cmd_ipc(int argc, char *argv[]) {
-  char action[32] = "setenv";  // 默认操作
-  char name[256] = "";
-  char value[1024] = "";
   char host[64] = "127.0.0.1";
   int port = 0;
-  BOOL hasName = FALSE;
-  BOOL hasValue = FALSE;
+  const char *value = "";
 
   // 解析参数
   for (int i = 2; i < argc; i++) {
-    if (strncmp(argv[i], "--action=", 9) == 0) {
-      strncpy(action, argv[i] + 9, sizeof(action) - 1);
-      action[sizeof(action) - 1] = '\0';
-    } else if (strncmp(argv[i], "--name=", 7) == 0) {
-      strncpy(name, argv[i] + 7, sizeof(name) - 1);
-      name[sizeof(name) - 1] = '\0';
-      hasName = TRUE;
-    } else if (strncmp(argv[i], "--value=", 8) == 0) {
-      strncpy(value, argv[i] + 8, sizeof(value) - 1);
-      value[sizeof(value) - 1] = '\0';
-      hasValue = TRUE;
-    } else if (strncmp(argv[i], "--host=", 7) == 0) {
+    if (strncmp(argv[i], "--host=", 7) == 0) {
        strncpy(host, argv[i] + 7, sizeof(host) - 1);
       host[sizeof(host) - 1] = '\0';
     } else if (strncmp(argv[i], "--port=", 7) == 0) {
       port = atoi(argv[i] + 7);
+    } else if (strncmp(argv[i], "--value=", 8) == 0) {
+      value = argv[i] + 8;
     } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "--h") == 0) {
-      printf("IPC (Inter-Process Communication) command usage:\n\n");
-      printf("Environment variables (简单方式):\n");
-      printf("  spcmd ipc --action=setenv --name=KEY --value=VALUE   - 设置环境变量\n");
-      printf("  spcmd ipc --action=getenv --name=KEY                 - 获取环境变量\n\n");
-      printf("Named pipe (需要对方监听):\n");
-      printf("  spcmd ipc --action=pipe --name=pipe_name --value=VALUE  - 发送消息到命名管道\n\n");
-      printf("TCP Socket (需要对方监听):\n");
-      printf("  spcmd ipc --action=send --host=127.0.0.1 --port=9999 --value=VALUE  - 发送TCP消息\n\n");
+      printf("TCP Socket communication command usage:\n\n");
+      printf("  spcmd ipc --host=IP --port=PORT --value=DATA  - Send data via TCP\n\n");
+      printf("Parameters:\n");
+      printf("  --host=IP       - Target IP address (default: 127.0.0.1)\n");
+      printf("  --port=PORT     - Target port (required)\n");
+      printf("  --value=DATA    - Data to send (required)\n\n");
       printf("Examples:\n");
-      printf("  spcmd ipc --action=setenv --name=MYDATA --value=hello\n");
-      printf("  spcmd ipc --action=getenv --name=MYDATA\n");
-      printf("  spcmd ipc --action=send --host=127.0.0.1 --port=9999 --value=hello\n");
+      printf("  spcmd ipc --host=127.0.0.1 --port=9999 --value=hello\n");
+      printf("  spcmd ipc --host=192.168.1.100 --port=8080 --value=test\n");
       return;
     }
   }
 
-  if (strcmp(action, "setenv") == 0) {
-    // 设置环境变量
-    if (!hasName) {
-      printf("Error: --name is required for setenv action\n");
-      return;
-    }
-    if (!hasValue) {
-      printf("Error: --value is required for setenv action\n");
-      return;
-    }
-    if (SetEnvironmentVariableA(name, value)) {
-      printf("Environment variable set: %s=%s\n", name, value);
-    } else {
-      printf("Error: Failed to set environment variable, error: %lu\n", GetLastError());
-    }
-  } else if (strcmp(action, "getenv") == 0) {
-    // 获取环境变量
-    if (!hasName) {
-      printf("Error: --name is required for getenv action\n");
-      return;
-    }
-    char buffer[1024] = {0};
-    DWORD size = sizeof(buffer);
-    if (GetEnvironmentVariableA(name, buffer, size)) {
-      printf("%s\n", buffer);
-    } else {
-      printf("Error: Environment variable '%s' not found\n", name);
-    }
-  } else if (strcmp(action, "pipe") == 0) {
-    // 发送消息到命名管道
-    if (!hasName) {
-      printf("Error: --name is required for pipe action\n");
-      return;
-    }
-    if (!hasValue) {
-      printf("Error: --value is required for pipe action\n");
-      return;
-    }
-    char pipePath[512];
-    snprintf(pipePath, sizeof(pipePath), "\\\\.\\pipe\\%s", name);
-    HANDLE hPipe = CreateFileA(pipePath, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
-    if (hPipe == INVALID_HANDLE_VALUE) {
-      printf("Error: Cannot connect to pipe '%s', error: %lu\n", name, GetLastError());
-      return;
-    }
-    DWORD written;
-    if (WriteFile(hPipe, value, strlen(value), &written, NULL)) {
-      printf("Message sent to pipe '%s': %s\n", name, value);
-    } else {
-      printf("Error: Failed to write to pipe, error: %lu\n", GetLastError());
-    }
-    CloseHandle(hPipe);
-  } else if (strcmp(action, "send") == 0) {
-    // TCP发送消息
-    if (port <= 0) {
-      printf("Error: --port is required for send action\n");
-      return;
-    }
-    if (!hasValue) {
-      printf("Error: --value is required for send action\n");
-      return;
-    }
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-      printf("Error: Failed to initialize Winsock\n");
-      return;
-    }
-    SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == INVALID_SOCKET) {
-      printf("Error: Failed to create socket\n");
-      WSACleanup();
-      return;
-    }
-    struct sockaddr_in server;
-    server.sin_family = AF_INET;
-    server.sin_addr.s_addr = inet_addr(host);
-    server.sin_port = htons(port);
-    if (connect(sock, (struct sockaddr*)&server, sizeof(server)) == SOCKET_ERROR) {
-      printf("Error: Cannot connect to %s:%d, error: %d\n", host, port, WSAGetLastError());
-      closesocket(sock);
-      WSACleanup();
-      return;
-    }
-    if (send(sock, value, strlen(value), 0) == SOCKET_ERROR) {
-      printf("Error: Failed to send data, error: %d\n", WSAGetLastError());
-      closesocket(sock);
-      WSACleanup();
-      return;
-    } else {
-      printf("Message sent to %s:%d: %s\n", host, port, value);
-    }
+  // 检查必需参数
+  if (port <= 0) {
+    printf("Error: --port is required\n");
+    return;
+  }
+  if (value == NULL || strlen(value) == 0) {
+    printf("Error: --value is required\n");
+    return;
+  }
+
+  // 初始化Winsock
+  WSADATA wsaData;
+  if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+    printf("Error: Failed to initialize Winsock\n");
+    return;
+  }
+
+  // 创建socket
+  SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+  if (sock == INVALID_SOCKET) {
+    printf("Error: Failed to create socket\n");
+    WSACleanup();
+    return;
+  }
+
+  // 连接服务器
+  struct sockaddr_in server;
+  server.sin_family = AF_INET;
+  server.sin_addr.s_addr = inet_addr(host);
+  server.sin_port = htons(port);
+
+  if (connect(sock, (struct sockaddr*)&server, sizeof(server)) == SOCKET_ERROR) {
+    printf("Error: Cannot connect to %s:%d, error: %d\n", host, port, WSAGetLastError());
     closesocket(sock);
     WSACleanup();
-  } else {
-    printf("Error: Unknown action '%s'. Use --help for usage.\n", action);
+    return;
   }
+
+  // 发送数据
+  if (send(sock, value, strlen(value), 0) == SOCKET_ERROR) {
+    printf("Error: Failed to send data, error: %d\n", WSAGetLastError());
+  } else {
+    printf("Message sent to %s:%d: %s\n", host, port, value);
+  }
+
+   closesocket(sock);
+   WSACleanup();
 }
 
 // NTP时间同步命令
