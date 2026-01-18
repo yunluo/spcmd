@@ -13,36 +13,69 @@
  * - Restart specified processes
  */
 
+//==============================================================================
+// 版本信息
+//==============================================================================
+#define SPCMD_VERSION "7.5.0"
+
+//==============================================================================
+// 预处理宏定义
+//==============================================================================
 #define _WIN32_IE 0x0500
 #define COBJMACROS
 #define INITGUID
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+
+//==============================================================================
+// 头文件包含
+//==============================================================================
 #include "ini.h"
 #include "stb_image_write.h"
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <objbase.h>
-#include <psapi.h>    // 添加这个头文件以支持进程信息查询
-#include <shellapi.h> // 添加这个头文件以支持图标提取
+#include <psapi.h>
+#include <shellapi.h>
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <shobjidl.h>
-#include <stdarg.h> // 添加这个头文件以支持可变参数函数
-#include <stdint.h> // 添加这个头文件以支持uint32_t
+#include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>     // 添加这个头文件以支持时间函数
-#include <tlhelp32.h> // 添加这个头文件以支持进程操作
+#include <time.h>
+#include <tlhelp32.h>
+
+//==============================================================================
+// 基本类型定义
+//==============================================================================
+#ifndef BOOL
+#define BOOL int
+#endif
+
+#ifndef TRUE
+#define TRUE 1
+#endif
+
+#ifndef FALSE
+#define FALSE 0
+#endif
 
 // 资源ID定义
 #define IDI_ICON1 101
 
+//==============================================================================
+// 常量定义
+//==============================================================================
 // 开机自启目录 GUID (Windows Vista+)
 static const GUID FOLDERID_CommonStartup = {0xB97D20BB, 0xF46A, 0x4C97, {0xBA, 0x10, 0x5E, 0x36, 0x08, 0x43, 0xEC, 0xC3}};
 static const GUID FOLDERID_Startup = {0xB97D20BB, 0xF46A, 0x4C97, {0xBA, 0x10, 0x5E, 0x36, 0x08, 0x42, 0xEC, 0xC3}};
 
+//==============================================================================
+// 结构体定义
+//==============================================================================
 // 参数定义结构体
 typedef struct {
   const char *name;  // 参数名称
@@ -57,43 +90,36 @@ typedef struct {
   int param_count;         // 参数数量
 } ParamContext;
 
-// 创建参数上下文
-ParamContext *create_param_context(ParamDefinition *param_defs, int count);
+// 进程ID列表结构体
+typedef struct {
+  DWORD *pids;
+  int count;
+  int capacity;
+} ProcessIdList;
 
-// 解析命令行参数
-BOOL parse_parameters(ParamContext *context, int argc, char *argv[],
-                      int start_arg);
+// 自定义弹窗结构体
+typedef struct {
+  char *text;
+  int fontSize;
+  COLORREF bgColor;
+  COLORREF textColor;
+  BOOL modal;
+  BOOL noDrag;
+  BOOL bold;
+  UINT codePage;
+  char *onClickCommand;
+} WindowParams;
 
-// 获取字符串参数
-const char *get_param_value(ParamContext *context, const char *param_name);
+// 命令结构定义
+typedef struct {
+  const char *name;
+  void (*handler)(int argc, char *argv[]);
+  int returns_value;
+} Command;
 
-// 获取整数参数
-int get_param_int_value(ParamContext *context, const char *param_name,
-                        int default_value);
-
-// 检查参数是否已设置
-BOOL is_param_set(ParamContext *context, const char *param_name);
-
-// 检查必填参数是否已设置
-BOOL check_required_params(ParamContext *context);
-
-// 释放参数上下文
-void free_param_context(ParamContext *context);
-
-// 定义BOOL类型，如果尚未定义
-#ifndef BOOL
-#define BOOL int
-#endif
-
-#ifndef TRUE
-#define TRUE 1
-#endif
-
-#ifndef FALSE
-#define FALSE 0
-#endif
-
-// 函数声明
+//==============================================================================
+// 函数声明 - 命令处理
+//==============================================================================
 void handle_command(int argc, char *argv[]);
 void cmd_screenshot(int argc, char *argv[]);
 void cmd_shortcut(int argc, char *argv[]);
@@ -113,18 +139,46 @@ void cmd_floating(int argc, char *argv[]);
 void cmd_timesync(int argc, char *argv[]);
 void cmd_ipc(int argc, char *argv[]);
 
-// Base64 encoding function declaration
-char *base64_encode(const unsigned char *data, size_t input_length,
-                    size_t *output_length);
+//==============================================================================
+// 函数声明 - 参数解析
+//==============================================================================
+ParamContext *create_param_context(ParamDefinition *param_defs, int count);
+BOOL parse_parameters(ParamContext *context, int argc, char *argv[], int start_arg);
+const char *get_param_value(ParamContext *context, const char *param_name);
+int get_param_int_value(ParamContext *context, const char *param_name, int default_value);
+BOOL is_param_set(ParamContext *context, const char *param_name);
+BOOL check_required_params(ParamContext *context);
+void free_param_context(ParamContext *context);
 
-// 命令结构定义
-typedef struct {
-  const char *name;
-  void (*handler)(int argc, char *argv[]);
-  int returns_value; // 是否返回值（0:否, 1:是）
-} Command;
+//==============================================================================
+// 函数声明 - 系统功能
+//==============================================================================
+BOOL IsRunAsAdmin();
+BOOL ElevatePrivileges(int argc, char *argv[]);
+BOOL GetStartupPath(BOOL forAllUsers, char *path, int pathSize);
+BOOL GetWindowsVersionSafe(DWORD *major, DWORD *minor);
+char *resolve_system_variables(const char *input);
 
-// 命令表 - 优化命令分派机制
+//==============================================================================
+// 函数声明 - 进程操作
+//==============================================================================
+int find_process_by_name(const char *processName, DWORD *processId);
+BOOL kill_process_by_name(const char *processName);
+ProcessIdList *get_pids_by_exe_name(const char *exeName);
+
+//==============================================================================
+// 函数声明 - 文件操作
+//==============================================================================
+BOOL create_empty_file(const char *path);
+void rotate_log_file(const char *path, ULONGLONG size_bytes);
+void save_as_base64_data(const char *bitmap_data, DWORD data_size, const char *filename);
+int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
+                          const char *format, int quality, BOOL quiet);
+char *base64_encode(const unsigned char *data, size_t input_length, size_t *output_length);
+
+//==============================================================================
+// 命令表
+//==============================================================================
 Command command_table[] = {
     {"screenshot", (void (*)(int, char **))cmd_screenshot, 0},
     {"shortcut", (void (*)(int, char **))cmd_shortcut, 0},
@@ -143,52 +197,52 @@ Command command_table[] = {
     {"floating", (void (*)(int, char **))cmd_floating, 0},
     {"timesync", (void (*)(int, char **))cmd_timesync, 0},
     {"ipc", (void (*)(int, char **))cmd_ipc, 0},
-    {NULL, NULL, 0} // 表结束标记
+    {NULL, NULL, 0}
 };
-void save_as_base64_data(const char *bitmap_data, DWORD data_size,
-                         const char *filename);
-int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
-                          const char *format, int quality, BOOL quiet);
-// 系统变量解析函数声明
-char *resolve_system_variables(const char *input);
 
-// 进程ID列表结构体
-typedef struct {
-  DWORD *pids;
-  int count;
-  int capacity;
-} ProcessIdList;
+//==============================================================================
+// 函数实现 - 系统版本检测
+//==============================================================================
+typedef LONG (WINAPI *RtlGetVersionPtr)(PRTL_OSVERSIONINFOW);
 
-// 添加权限检查和提升权限的函数声明
-BOOL IsRunAsAdmin();
-BOOL ElevatePrivileges(int argc, char *argv[]);
+BOOL GetWindowsVersionSafe(DWORD *major, DWORD *minor) {
+  // 优先使用RtlGetVersion（不受manifest限制）
+  HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
+  if (hNtdll) {
+    RtlGetVersionPtr pRtlGetVersion = (RtlGetVersionPtr)GetProcAddress(hNtdll, "RtlGetVersion");
+    if (pRtlGetVersion) {
+      RTL_OSVERSIONINFOW osvi = {0};
+      osvi.dwOSVersionInfoSize = sizeof(osvi);
+      if (pRtlGetVersion(&osvi) == 0) {
+        *major = osvi.dwMajorVersion;
+        *minor = osvi.dwMinorVersion;
+        return TRUE;
+      }
+    }
+  }
+  // 回退到GetVersionEx（XP兼容）
+  OSVERSIONINFO osvi = {0};
+  osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+  #if defined(_MSC_VER)
+    #pragma warning(suppress: 4996)
+  #elif defined(__GNUC__)
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  #endif
+  if (GetVersionEx(&osvi)) {
+  #if defined(__GNUC__)
+    #pragma GCC diagnostic pop
+  #endif
+    *major = osvi.dwMajorVersion;
+    *minor = osvi.dwMinorVersion;
+    return TRUE;
+  }
+  return FALSE;
+}
 
-// 兼容XP/Vista/7/10/11获取开机自启目录
-BOOL GetStartupPath(BOOL forAllUsers, char *path, int pathSize);
-
-// 通用进程查找和终止函数声明
-int find_process_by_name(const char *processName, DWORD *processId);
-BOOL kill_process_by_name(const char *processName);
-ProcessIdList *get_pids_by_exe_name(const char *exeName);
-
-// 通用文件操作函数声明
-BOOL create_empty_file(const char *path);
-void rotate_log_file(const char *path, ULONGLONG size_bytes);
-
-// 自定义弹窗结构体，用于传递参数
-typedef struct {
-  char *text;
-  int fontSize;
-  COLORREF bgColor;
-  COLORREF textColor; // 添加文字颜色
-  BOOL modal;         // 是否为模态弹窗
-  BOOL noDrag;        // 是否禁止拖拽
-  BOOL bold;          // 是否粗体
-  UINT codePage;      // 文本编码代码页（CP_UTF8, CP_ACP等）
-  char *onClickCommand; // 点击确认按钮后执行的命令
-} WindowParams;
-
-// WinMain函数：GUI应用程序的入口点
+//==============================================================================
+// 函数实现 - 程序入口
+//==============================================================================
 int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
                    LPSTR _lpCmdLine, int _nCmdShow) {
   // 初始化Winsock
@@ -232,8 +286,9 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
   // 如果没有参数，直接返回
   if (argc < 2) {
     MessageBoxA(NULL,
-                "SPCMD - System Power Command Tool\n\nUsage: spcmd.exe "
-                "[command] [options]",
+                "SPCMD - System Power Command Tool\n"
+                "Version: " SPCMD_VERSION "\n\n"
+                "Usage: spcmd.exe [command] [options]",
                 "INFO", MB_OK | MB_ICONINFORMATION);
     // 释放内存
     for (int i = 0; i < argc; i++) {
@@ -464,7 +519,12 @@ void cmd_screenshot(int argc, char *argv[]) {
       printf("Error: Failed to get DIB bits\n");
       GlobalUnlock(hDIB);
       GlobalFree(hDIB);
-      // 继续执行后续操作而不是直接返回
+      // 清理资源并返回
+      DeleteObject(hBitmap);
+      DeleteDC(hMemoryDC);
+      ReleaseDC(NULL, hScreenDC);
+      free_param_context(context);
+      return;
     }
 
     // Save as base64 encoded data to file
@@ -646,7 +706,6 @@ void cmd_shortcut(int argc, char *argv[]) {
                                 SHGFP_TYPE_CURRENT, desktopPath);
    if (FAILED(hr)) {
      printf("Error: Unable to get desktop path (hr=0x%08lX)\n", (unsigned long)hr);
-     CoUninitialize();
      return;
    }
 
@@ -924,7 +983,7 @@ void cmd_autorun(int argc, char *argv[]) {
       if (SUCCEEDED(hres)) {
         // Convert to wide character
         WCHAR wsz[MAX_PATH];
-        MultiByteToWideChar(CP_ACP, 0, shortcutPath, -1, wsz, MAX_PATH);
+        MultiByteToWideChar(CP_UTF8, 0, shortcutPath, -1, wsz, MAX_PATH);
 
         hres = IPersistFile_Save(pPersistFile, wsz, TRUE);
 
@@ -1042,8 +1101,17 @@ void cmd_task(int argc, char *argv[]) {
   // 尝试创建任务通常需要管理员权限
   BOOL needAdmin = TRUE;
 
+  // 检查是否已经尝试过提权（防止无限循环）
+  BOOL alreadyElevated = FALSE;
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--once") == 0) {
+      alreadyElevated = TRUE;
+      break;
+    }
+  }
+
   // 如果需要管理员权限但当前没有管理员权限，则尝试提升权限
-  if (needAdmin && !IsRunAsAdmin()) {
+  if (needAdmin && !IsRunAsAdmin() && !alreadyElevated) {
     printf("创建计划任务需要管理员权限，正在请求权限提升...\n");
 
     // 尝试提升权限
@@ -1065,13 +1133,11 @@ void cmd_task(int argc, char *argv[]) {
   printf("Start date: %s\n", startDate);
 
   // 检查Windows版本以确定使用哪种方法
-  OSVERSIONINFO osvi;
-  ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
-  osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-  GetVersionEx(&osvi);
+  DWORD dwMajorVersion = 0, dwMinorVersion = 0;
+  GetWindowsVersionSafe(&dwMajorVersion, &dwMinorVersion);
 
-  BOOL isWindowsXP = (osvi.dwMajorVersion == 5 &&
-                      osvi.dwMinorVersion == 1); // Windows XP是5.1版本
+  BOOL isWindowsXP = (dwMajorVersion == 5 &&
+                      dwMinorVersion == 1); // Windows XP是5.1版本
 
   char command[1024];
 
@@ -1221,11 +1287,6 @@ void cmd_restart(int argc, char *argv[]) {
             printf("Failed to open process: %s (PID: %lu)\n", pe32.szExeFile,
                    pe32.th32ProcessID);
           }
-        }
-
-        // Restore the dot if we removed it
-        if (procDot != NULL) {
-          *procDot = '.';
         }
       } while (Process32Next(hSnapshot, &pe32));
     }
@@ -2024,6 +2085,12 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     PAINTSTRUCT ps;
     HDC hdc = BeginPaint(hwnd, &ps);
 
+    // 添加空指针检查
+    if (!params) {
+      EndPaint(hwnd, &ps);
+      break;
+    }
+
     // 获取客户区大小
     RECT rect;
     GetClientRect(hwnd, &rect);
@@ -2435,7 +2502,7 @@ void cmd_window(int argc, char *argv[]) {
 
   // 消息循环
   MSG msg;
-  while (GetMessage(&msg, NULL, 0, 0)) { // 修复：将NULL改为hwnd
+  while (GetMessage(&msg, NULL, 0, 0)) { // NULL接收线程所有窗口消息，包括WM_QUIT
     if (msg.message == WM_QUIT) {
       break;
     }
@@ -2507,13 +2574,12 @@ Cleanup:
 
 // 兼容Windows XP/Vista/7/10/11获取开机自启目录
 BOOL GetStartupPath(BOOL forAllUsers, char *path, int pathSize) {
-  OSVERSIONINFO osvi;
-  osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-  GetVersionEx(&osvi);
+  DWORD dwMajorVersion = 0, dwMinorVersion = 0;
+  GetWindowsVersionSafe(&dwMajorVersion, &dwMinorVersion);
 
   if (forAllUsers) {
     // Windows Vista+ 使用新的API
-    if (osvi.dwMajorVersion >= 6) {
+    if (dwMajorVersion >= 6) {
       typedef HRESULT(WINAPI * PFN_SHGetKnownFolderPath)(REFKNOWNFOLDERID, DWORD, HANDLE, PWSTR *);
       PFN_SHGetKnownFolderPath pfnSHGetKnownFolderPath = (PFN_SHGetKnownFolderPath)
         GetProcAddress(GetModuleHandleW(L"shell32.dll"), "SHGetKnownFolderPath");
@@ -2534,7 +2600,7 @@ BOOL GetStartupPath(BOOL forAllUsers, char *path, int pathSize) {
     }
   } else {
     // Windows Vista+ 使用新的API
-    if (osvi.dwMajorVersion >= 6) {
+    if (dwMajorVersion >= 6) {
       typedef HRESULT(WINAPI * PFN_SHGetKnownFolderPath)(REFKNOWNFOLDERID, DWORD, HANDLE, PWSTR *);
       PFN_SHGetKnownFolderPath pfnSHGetKnownFolderPath = (PFN_SHGetKnownFolderPath)
         GetProcAddress(GetModuleHandleW(L"shell32.dll"), "SHGetKnownFolderPath");
@@ -2657,13 +2723,11 @@ void cmd_notify(int argc, char *argv[]) {
   printf("Displaying notification: %s\n", title);
 
   // 检查Windows版本以确定使用哪种通知方法
-  OSVERSIONINFO osvi;
-  ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
-  osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-  GetVersionEx(&osvi);
+  DWORD dwMajorVersion = 0, dwMinorVersion = 0;
+  GetWindowsVersionSafe(&dwMajorVersion, &dwMinorVersion);
 
-  BOOL isWindowsXP = (osvi.dwMajorVersion == 5 &&
-                      osvi.dwMinorVersion == 1); // Windows XP是5.1版本
+  BOOL isWindowsXP = (dwMajorVersion == 5 &&
+                      dwMinorVersion == 1); // Windows XP是5.1版本
 
   // 为Unicode转换分配内存
   int title_len = MultiByteToWideChar(CP_ACP, 0, title, -1, NULL, 0);
@@ -2980,7 +3044,15 @@ void cmd_config(int argc, char *argv[]) {
     if (GetSystemDirectoryA(systemDir, MAX_PATH) > 0) {
       if (strncmp(filePath, systemDir, strlen(systemDir)) == 0) {
         // 目标是系统目录，需要管理员权限
-        if (!IsRunAsAdmin()) {
+        // 检查是否已经尝试过提权（防止无限循环）
+        BOOL alreadyElevated = FALSE;
+        for (int i = 2; i < argc; i++) {
+          if (strcmp(argv[i], "--once") == 0) {
+            alreadyElevated = TRUE;
+            break;
+          }
+        }
+        if (!IsRunAsAdmin() && !alreadyElevated) {
           printf("写入系统配置文件需要管理员权限，正在请求权限提升...\n");
           if (ElevatePrivileges(argc, argv)) {
             return;
@@ -3066,11 +3138,19 @@ void cmd_config(int argc, char *argv[]) {
     }
 
     // 检查是否需要管理员权限（删除系统配置）
-    char systemDir[MAX_PATH];
-    if (GetSystemDirectoryA(systemDir, MAX_PATH) > 0) {
-      if (strncmp(filePath, systemDir, strlen(systemDir)) == 0) {
+    char systemDir2[MAX_PATH];
+    if (GetSystemDirectoryA(systemDir2, MAX_PATH) > 0) {
+      if (strncmp(filePath, systemDir2, strlen(systemDir2)) == 0) {
         // 目标是系统目录，需要管理员权限
-        if (!IsRunAsAdmin()) {
+        // 检查是否已经尝试过提权（防止无限循环）
+        BOOL alreadyElevated = FALSE;
+        for (int i = 2; i < argc; i++) {
+          if (strcmp(argv[i], "--once") == 0) {
+            alreadyElevated = TRUE;
+            break;
+          }
+        }
+        if (!IsRunAsAdmin() && !alreadyElevated) {
           printf("删除系统配置文件需要管理员权限，正在请求权限提升...\n");
           if (ElevatePrivileges(argc, argv)) {
             return;
@@ -3280,10 +3360,6 @@ int cmd_process(int argc, char *argv[]) {
   // Default return value (should never reach here due to the logic above)
   return 1;
 }
-
-// 添加权限检查和提升权限的函数声明
-BOOL IsRunAsAdmin();
-BOOL ElevatePrivileges(int argc, char *argv[]);
 
 // 通用进程查找函数
 int find_process_by_name(const char *processName, DWORD *processId) {
@@ -3601,6 +3677,7 @@ char *cmd_random(int argc, char *argv[]) {
     return NULL;
   }
 
+  free_param_context(context);
   return result;
 }
 
