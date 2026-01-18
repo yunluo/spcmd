@@ -132,8 +132,6 @@ void cmd_window(int argc, char *argv[]);
 void cmd_notify(int argc, char *argv[]);
 void cmd_config(int argc, char *argv[]);
 int cmd_process(int argc, char *argv[]);
-char *cmd_random(int argc, char *argv[]);
-void cmd_logrotate(int argc, char *argv[]);
 void cmd_tray(int argc, char *argv[]);
 void cmd_floating(int argc, char *argv[]);
 void cmd_timesync(int argc, char *argv[]);
@@ -169,8 +167,6 @@ ProcessIdList *get_pids_by_exe_name(const char *exeName);
 //==============================================================================
 // 函数声明 - 文件操作
 //==============================================================================
-BOOL create_empty_file(const char *path);
-void rotate_log_file(const char *path, ULONGLONG size_bytes);
 void save_as_base64_data(const char *bitmap_data, DWORD data_size, const char *filename);
 int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
                           const char *format, int quality, BOOL quiet);
@@ -191,8 +187,6 @@ Command command_table[] = {
     {"notify", (void (*)(int, char **))cmd_notify, 0},
     {"config", (void (*)(int, char **))cmd_config, 0},
     {"process", (void (*)(int, char **))cmd_process, 1},
-    {"random", (void (*)(int, char **))cmd_random, 1},
-    {"logrotate", (void (*)(int, char **))cmd_logrotate, 0},
     {"tray", (void (*)(int, char **))cmd_tray, 0},
     {"floating", (void (*)(int, char **))cmd_floating, 0},
     {"timesync", (void (*)(int, char **))cmd_timesync, 0},
@@ -354,13 +348,6 @@ void handle_command(int argc, char *argv[]) {
           if (result != 0) {
             // 注意：在调用exit之前手动释放内存实际上是不必要的
             exit(result); // 如果check命令返回非0值，退出程序
-          }
-        } else if (strcmp(command_name, "random") == 0) {
-          char *result = cmd_random(argc, resolved_argv);
-          if (result != NULL) {
-            printf("%s", result);
-            fflush(stdout);
-            free(result);
           }
         }
       } else {
@@ -3618,226 +3605,6 @@ uint64_t generate_snowflake_id(snowflake_generator *sf) {
   // 时间戳（42位）+ 节点ID（10位）+ 序列号（12位）
   uint64_t id = (timestamp << 22) | (sf->node_id << 12) | sf->sequence;
   return id;
-}
-
-char *cmd_random(int argc, char *argv[]) {
-
-  // 使用新的参数解析框架
-  ParamDefinition param_defs[] = {{"type", NULL, FALSE, FALSE}};
-
-  ParamContext *context = create_param_context(param_defs, 1);
-  if (!context) {
-    printf("Error: Failed to create parameter context\n");
-    return NULL;
-  }
-
-  // 解析参数
-  parse_parameters(context, argc, argv, 2);
-
-  // 获取参数值，使用默认值
-  const char *type_str = get_param_value(context, "type");
-  char type[20] = "uuid4"; // 默认类型
-  if (type_str) {
-    strncpy(type, type_str, sizeof(type) - 1);
-    type[sizeof(type) - 1] = '\0';
-  }
-
-  // 初始化随机数种子
-  srand((unsigned int)time(NULL));
-
-  // 为结果分配内存
-  char *result = (char *)malloc(256); // 分配足够大的缓冲区
-  if (!result) {
-    printf("Error: Memory allocation failed\n");
-    free_param_context(context);
-    return NULL;
-  }
-  result[0] = '\0'; // 初始化为空字符串
-
-  if (strcmp(type, "uuid4") == 0) {
-    char uuid_str[37]; // UUID字符串长度为36字符+1个结束符
-    generate_uuid_v4(uuid_str);
-    sprintf(result, "%s", uuid_str);
-  } else if (strcmp(type, "uuid7") == 0) {
-    char uuid_str[37]; // UUID字符串长度为36字符+1个结束符
-    generate_uuid_v7(uuid_str);
-    sprintf(result, "%s", uuid_str);
-  } else if (strcmp(type, "snowflake") == 0) {
-    snowflake_generator sf = init_snowflake();
-    uint64_t id = generate_snowflake_id(&sf);
-    sprintf(result, "%I64u", id);
-  } else if (strcmp(type, "number") == 0) {
-    int random_num = rand();
-    sprintf(result, "%d", random_num);
-  } else {
-    printf("Error: Unknown type '%s'. Use uuid4, uuid7, snowflake, or number\n",
-           type);
-    free(result);
-    free_param_context(context);
-    return NULL;
-  }
-
-  free_param_context(context);
-  return result;
-}
-
-// 日志轮转切割命令
-void cmd_logrotate(int argc, char *argv[]) {
-  // logrotate [--path=path_to_log_file] [--maxsize=size_in_mb] [--daily]
-  // Rotates log files based on size or daily schedule.
-
-  // 使用新的参数解析框架
-  ParamDefinition param_defs[] = {{"path", NULL, FALSE, FALSE},
-                                  {"maxsize", NULL, FALSE, FALSE},
-                                  {"daily", NULL, FALSE, FALSE}};
-
-  // Create parameter context
-  ParamContext *context = create_param_context(param_defs, 3);
-  if (context == NULL) {
-    printf("Error: Unable to create parameter context\n");
-    return;
-  }
-
-  // Parse parameters
-  if (!parse_parameters(context, argc, argv, 2)) {
-    free_param_context(context);
-    return;
-  }
-
-  // Parse parameters
-  char path[MAX_PATH] = "app.log"; // default log file
-  int max_size_mb = 10;            // default max size in MB
-  BOOL daily = FALSE;              // default to size-based rotation
-
-  // Get parameter values
-  const char *path_value = get_param_value(context, "path");
-  if (path_value != NULL) {
-    strncpy(path, path_value, MAX_PATH - 1);
-    path[MAX_PATH - 1] = '\0';
-  }
-
-  // Get maxsize parameter
-  max_size_mb = get_param_int_value(context, "maxsize", 10);
-  if (max_size_mb < 1)
-    max_size_mb = 1;
-
-  // Check if daily flag is set
-  daily = is_param_set(context, "daily");
-
-  // Check if file exists
-  WIN32_FILE_ATTRIBUTE_DATA fileAttr;
-  if (!GetFileAttributesExA(path, GetFileExInfoStandard, &fileAttr)) {
-    printf("Error: Log file '%s' does not exist or cannot be accessed\n", path);
-    free_param_context(context);
-    return;
-  }
-
-  // Daily rotation
-  if (daily) {
-    // Get current date
-    SYSTEMTIME st;
-    GetLocalTime(&st);
-
-    // Create backup filename with current date
-    char backup_path[MAX_PATH];
-    sprintf(backup_path, "%s.%04d%02d%02d", path, st.wYear, st.wMonth, st.wDay);
-
-    // Check if backup file already exists for today
-    if (GetFileAttributesA(backup_path) != INVALID_FILE_ATTRIBUTES) {
-      printf("Log file already rotated today. Backup exists as '%s'\n",
-             backup_path);
-      free_param_context(context);
-      return;
-    }
-
-    // Rename current log file to backup
-    if (MoveFileA(path, backup_path)) {
-      printf("Log file rotated successfully. Backup created as '%s'\n",
-             backup_path);
-
-      // Create new empty log file
-      if (create_empty_file(path)) {
-        printf("New log file '%s' created\n", path);
-      }
-    } else {
-      printf("Error: Failed to rotate log file. Error code: %lu\n",
-             GetLastError());
-    }
-
-    return;
-  }
-
-  // Size-based rotation (original behavior)
-  // Calculate file size in bytes
-  LARGE_INTEGER fileSize;
-  fileSize.LowPart = fileAttr.nFileSizeLow;
-  fileSize.HighPart = fileAttr.nFileSizeHigh;
-  unsigned long long size_bytes =
-      ((unsigned long long)fileSize.HighPart << 32) | fileSize.LowPart;
-  unsigned long long max_size_bytes =
-      (unsigned long long)max_size_mb * 1024 * 1024;
-
-  // Debug output
-  printf("File: %s\n", path);
-  printf("Current size: %I64u bytes\n", size_bytes);
-  printf("Threshold: %I64u bytes (%d MB)\n", max_size_bytes, max_size_mb);
-
-  // Check if file needs rotation
-  if (size_bytes < max_size_bytes) {
-    printf("Log file '%s' size (%I64u bytes) is below threshold (%I64u bytes). "
-           "No rotation needed.\n",
-           path, size_bytes, max_size_bytes);
-    free_param_context(context);
-    return;
-  }
-
-  rotate_log_file(path, size_bytes);
-  free_param_context(context);
-}
-
-// 通用创建空文件函数
-BOOL create_empty_file(const char *path) {
-  HANDLE hFile = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL,
-                             CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-  if (hFile != INVALID_HANDLE_VALUE) {
-    CloseHandle(hFile);
-    return TRUE;
-  } else {
-    printf("Warning: Failed to create file '%s'\n", path);
-    return FALSE;
-  }
-}
-
-// 通用日志文件轮转函数
-void rotate_log_file(const char *path, ULONGLONG size_bytes) {
-  if (size_bytes < 1) {
-    return;
-  }
-
-  printf("Rotating log file '%s' (size: %I64u bytes)\n", path, size_bytes);
-
-  // Perform log rotation
-  char backup_path[MAX_PATH];
-  SYSTEMTIME st;
-  GetLocalTime(&st);
-
-  // Create backup filename with timestamp
-  sprintf(backup_path, "%s.%04d%02d%02d_%02d%02d%02d", path, st.wYear,
-          st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
-
-  // Rename current log file to backup
-  if (MoveFileA(path, backup_path)) {
-    printf("Log file rotated successfully. Backup created as '%s'\n",
-           backup_path);
-
-    // Create new empty log file
-    if (create_empty_file(path)) {
-      printf("New log file '%s' created\n", path);
-    }
-  } else {
-    printf("Error: Failed to rotate log file. Error code: %lu\n",
-           GetLastError());
-  }
 }
 
 // 托盘图标相关的常量定义

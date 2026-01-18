@@ -1,0 +1,122 @@
+============================================ 
+SPCMD Test Log 
+Date: 周日 2026/01/18 14:45:37.66 
+============================================ 
+ 
+[Test 1] screenshot help 
+  Command: spcmd.exe screenshot --h 
+  Output size: 54 bytes 
+  Criteria: output size > 10 bytes 
+  Result: PASS 
+ 
+[Test 2] shortcut help 
+  Command: spcmd.exe shortcut --h 
+  Output size: 62 bytes 
+  Criteria: output size > 10 bytes 
+  Result: PASS 
+ 
+[Test 3] autorun help 
+  Command: spcmd.exe autorun --h 
+  Output size: 62 bytes 
+  Criteria: output size > 10 bytes 
+  Result: PASS 
+ 
+[Test 4] task help 
+  Command: spcmd.exe task --h 
+  Output size: 53 bytes 
+  Criteria: output size > 10 bytes 
+  Result: PASS 
+ 
+[Test 5] restart help 
+  Command: spcmd.exe restart --h 
+  Output size: 61 bytes 
+  Criteria: output size > 10 bytes 
+  Result: PASS 
+ 
+[Test 6] config help 
+  Command: spcmd.exe config --h 
+  Output size: 36 bytes 
+  Criteria: output size > 10 bytes 
+  Result: PASS 
+ 
+[Test 7] process help 
+  Command: spcmd.exe process --h 
+  Output size: 53 bytes 
+  Criteria: output size > 10 bytes 
+  Result: PASS 
+ 
+[Test 8] tray help 
+  Command: spcmd.exe tray --h 
+  Output size: 198 bytes 
+  Criteria: output size > 10 bytes 
+  Result: PASS 
+ 
+[Test 9] floating help 
+  Command: spcmd.exe floating --h 
+  Output size: 207 bytes 
+  Criteria: output size > 10 bytes 
+  Result: PASS 
+ 
+[Test 10] ipc help 
+  Command: spcmd.exe ipc --h 
+  Output size: 404 bytes 
+  Criteria: output size > 10 bytes 
+  Result: PASS 
+ 
+[Test 11] screenshot save JPG 
+  Command: spcmd.exe screenshot --save=test_shot.jpg 
+  Expected file: test_shot.jpg 
+  Criteria: file exists after command 
+  Result: PASS - file created, size: 982550 bytes 
+ 
+[Test 12] config read INI 
+  Command: spcmd.exe config --file=test_cfg.ini --action=get --section=test --key=mykey 
+  Expected keyword: myvalue 
+  Criteria: output contains keyword 
+  Output: 
+Config file: test_cfg.ini
+Action: get
+myvalue
+  Result: PASS - keyword found 
+ 
+[Test 13] window popup 
+  Result: SKIP - GUI requires manual verification 
+ 
+[Test 14] notify notification 
+  Result: SKIP - GUI requires manual verification 
+ 
+[Test 15] infoboxtop popup 
+  Result: SKIP - GUI requires manual verification 
+ 
+[Test 16] qboxtop popup 
+  Result: SKIP - GUI requires manual verification 
+ 
+[Test 17] shortcut 
+  Result: SKIP - requires write permission 
+ 
+[Test 18] autorun 
+  Result: SKIP - requires admin 
+ 
+[Test 19] task 
+  Result: SKIP - requires admin 
+ 
+[Test 20] restart 
+  Result: SKIP - may require admin 
+ 
+[Test 21] tray 
+  Result: SKIP - requires target process 
+ 
+[Test 22] floating 
+  Result: SKIP - requires target process 
+ 
+[Test 23] timesync 
+  Result: SKIP - requires admin 
+ 
+============================================ 
+Test Summary 
+============================================ 
+Total:  23 
+Passed: 12 
+Failed: 0 
+End Time: 周日 2026/01/18 14:45:39.19 
+============================================ 
