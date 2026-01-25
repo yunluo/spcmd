@@ -576,11 +576,12 @@ void cmd_screenshot(int argc, char *argv[]) {
         // Replace .bmp with .png
         char *dot = strrchr(filename, '.');
         if (dot) {
-          strcpy(dot, ".png");
+          strncpy(dot, ".png", MAX_PATH - (dot - filename) - 1);
+          dot[MAX_PATH - (dot - filename) - 1] = '\0';
         }
       } else if (!strstr(filename, ".png")) {
         // Add .png extension if no extension
-        strcat(filename, ".png");
+        strncat(filename, ".png", MAX_PATH - strlen(filename) - 1);
       }
     } else if (strcmp(format, "jpg") == 0 || strcmp(format, "JPG") == 0 ||
                strcmp(format, "jpeg") == 0 || strcmp(format, "JPEG") == 0) {
@@ -589,11 +590,12 @@ void cmd_screenshot(int argc, char *argv[]) {
         // Replace .bmp with .jpg
         char *dot = strrchr(filename, '.');
         if (dot) {
-          strcpy(dot, ".jpg");
+          strncpy(dot, ".jpg", MAX_PATH - (dot - filename) - 1);
+          dot[MAX_PATH - (dot - filename) - 1] = '\0';
         }
       } else if (!strstr(filename, ".jpg") && !strstr(filename, ".jpeg")) {
         // Add .jpg extension if no extension
-        strcat(filename, ".jpg");
+        strncat(filename, ".jpg", MAX_PATH - strlen(filename) - 1);
       }
     } else {
       // Save as BMP (default)
@@ -602,20 +604,23 @@ void cmd_screenshot(int argc, char *argv[]) {
         // Replace .png with .bmp
         char *dot = strrchr(filename, '.');
         if (dot) {
-          strcpy(dot, ".bmp");
+          strncpy(dot, ".bmp", MAX_PATH - (dot - filename) - 1);
+          dot[MAX_PATH - (dot - filename) - 1] = '\0';
         }
       } else if (strstr(filename, ".jpg") || strstr(filename, ".jpeg")) {
         // Replace .jpg/.jpeg with .bmp
         char *dot = strrchr(filename, '.');
         if (dot) {
-          strcpy(dot, ".bmp");
+          strncpy(dot, ".bmp", MAX_PATH - (dot - filename) - 1);
+          dot[MAX_PATH - (dot - filename) - 1] = '\0';
         }
       } else if (!strstr(filename, ".bmp")) {
         // Add .bmp extension if no extension
-        strcat(filename, ".bmp");
+        strncat(filename, ".bmp", MAX_PATH - strlen(filename) - 1);
       }
       // Use "bmp" as format for the save function
-      strcpy(format, "bmp");
+      strncpy(format, "bmp", 4);
+      format[3] = '\0';
     }
 
     // Use the new helper function to save the bitmap
@@ -1801,7 +1806,8 @@ char *resolve_system_variables(const char *input) {
               output = new_output;
               buffer_size = new_size;
             }
-            strcpy(&output[out_pos], var_value);
+            strncpy(&output[out_pos], var_value, buffer_size - out_pos - 1);
+            output[buffer_size - 1] = '\0';
             out_pos += value_len;
             free(var_value);
 
@@ -3502,7 +3508,7 @@ void generate_uuid_v4(char *uuid_str) {
   data[2] = (data[2] & 0x3FFFFFFF) | 0x80000000;
 
   // 格式化为UUID字符串
-  sprintf(uuid_str, "%08x-%04x-%04x-%04x-%04x%08x", data[0], data[1] & 0xFFFF,
+  snprintf(uuid_str, 37, "%08x-%04x-%04x-%04x-%04x%08x", data[0], data[1] & 0xFFFF,
           (data[1] >> 16) & 0xFFFF, data[2] & 0xFFFF, (data[2] >> 16) & 0xFFFF,
           data[3]);
 }
@@ -3536,7 +3542,7 @@ void generate_uuid_v7(char *uuid_str) {
 
   // 格式化为UUID字符串
   // UUID格式：8-4-4-4-12
-  sprintf(uuid_str, "%08x-%04x-%04x-%04x-%04x%08x", ts_high,
+  snprintf(uuid_str, 37, "%08x-%04x-%04x-%04x-%04x%08x", ts_high,
           (ts_low_rand >> 16) & 0xFFFF, // 时间戳低位和随机数高位的高16位
           ts_low_rand & 0xFFFF,         // 时间戳低位和随机数高位的低16位
           rand_mid,                     // 版本字段
