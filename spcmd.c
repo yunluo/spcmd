@@ -2676,29 +2676,46 @@ BOOL GetStartupPath(BOOL forAllUsers, char *path, int pathSize) {
 BOOL ElevatePrivileges(int argc, char *argv[]) {
   wchar_t szPath[MAX_PATH];
   wchar_t szCmdLine[2048] = {0};
+  size_t remainingSpace = sizeof(szCmdLine) / sizeof(wchar_t) - 1;  // 留一个字节给\0
+  size_t written = 0;
 
   // 获取当前程序路径
   if (!GetModuleFileNameW(NULL, szPath, MAX_PATH)) {
     return FALSE;
   }
 
-  // 构建命令行参数
-  wcscat(szCmdLine, L"\"");
-  wcscat(szCmdLine, szPath);
-  wcscat(szCmdLine, L"\" ");
+  // 构建命令行参数，使用 snwprintf 替代 wcscat
+  int result = _snwprintf(szCmdLine, remainingSpace, L"\"%s\" ", szPath);
+  if (result < 0) {
+    printf("Error: Command line too long\n");
+    return FALSE;
+  }
+  
+  written = result;
+  remainingSpace -= written;
 
   // 添加原始参数（使用UTF-8编码以支持中文路径）
   for (int i = 1; i < argc; i++) {
     wchar_t argW[512];
     MultiByteToWideChar(CP_UTF8, 0, argv[i], -1, argW, 512);
 
-    wcscat(szCmdLine, L"\"");
-    wcscat(szCmdLine, argW);
-    wcscat(szCmdLine, L"\" ");
+    int arg_len = _snwprintf(&szCmdLine[written], remainingSpace, L"\"%s\" ", argW);
+    if (arg_len < 0) {
+      printf("Error: Command line too long when adding arguments\n");
+      return FALSE;
+    }
+    written += arg_len;
+    remainingSpace -= arg_len;
   }
 
   // 添加 --once 标记，防止重复提权
-  wcscat(szCmdLine, L"--once ");
+  int once_len = _snwprintf(&szCmdLine[written], remainingSpace, L"--once ");
+  if (once_len < 0) {
+    printf("Error: Command line too long when adding --once\n");
+    return FALSE;
+  }
+  written += once_len;
+  remainingSpace -= once_len;
 
    // 初始化SHELLEXECUTEINFO结构
   SHELLEXECUTEINFOW sei = {0};
