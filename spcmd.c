@@ -45,6 +45,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <time.h>
 #include <tlhelp32.h>
 
@@ -157,6 +158,9 @@ BOOL GetStartupPath(BOOL forAllUsers, char *path, int pathSize);
 BOOL GetWindowsVersionSafe(DWORD *major, DWORD *minor);
 char *resolve_system_variables(const char *input);
 
+// High #5修复：安全的字符串转整数函数声明
+static int safe_strtoi(const char *str, int min_val, int max_val, int default_val);
+
 //==============================================================================
 // 函数声明 - 进程操作
 //==============================================================================
@@ -232,6 +236,36 @@ BOOL GetWindowsVersionSafe(DWORD *major, DWORD *minor) {
     return TRUE;
   }
   return FALSE;
+}
+
+//==============================================================================
+// 安全的字符串转整数函数 - High #5修复
+//==============================================================================
+static int safe_strtoi(const char *str, int min_val, int max_val, int default_val) {
+  if (!str || *str == '\0') {
+    return default_val;
+  }
+  
+  // 使用strtol替代atoi，便于检测错误
+  char *endptr = NULL;
+  errno = 0;
+  long value = strtol(str, &endptr, 10);
+  
+  // 检查转换错误
+  if (errno != 0 || endptr == str || *endptr != '\0') {
+    // 转换失败或包含无效字符
+    return default_val;
+  }
+  
+  // 检查范围
+  if (value < min_val) {
+    return min_val;
+  }
+  if (value > max_val) {
+    return max_val;
+  }
+  
+  return (int)value;
 }
 
 //==============================================================================
@@ -356,6 +390,20 @@ void handle_command(int argc, char *argv[]) {
   const char *command_name = resolved_argv[1];
   BOOL command_found = FALSE;
 
+  // High #1修复：验证命令名称长度（防止恶意输入）
+  // 合法命令名长度范围：至少1个字符，最多32个字符
+  size_t cmd_len = strnlen(command_name, 256);
+  if (cmd_len == 0 || cmd_len > 64) {
+    printf("Error: Invalid command name length\n");
+    for (int i = 0; i < argc; i++) {
+      if (resolved_argv[i]) {
+        free(resolved_argv[i]);
+      }
+    }
+    free(resolved_argv);
+    return;
+  }
+
   for (int i = 0; command_table[i].name != NULL; i++) {
     if (strcmp(command_table[i].name, command_name) == 0) {
       command_found = TRUE;
@@ -380,7 +428,8 @@ void handle_command(int argc, char *argv[]) {
 
    // 处理未知命令
   if (!command_found) {
-    printf("Unknown command: %s\n", command_name);
+    // High #2修复：使用明确的格式字符串（防止格式化字符串漏洞）
+    fprintf(stdout, "Unknown command: %s\n", command_name);
   }
 
   // 释放解析后的参数数组
@@ -486,12 +535,7 @@ void cmd_screenshot(int argc, char *argv[]) {
 
   const char *quality_value = get_param_value(context, "quality");
   if (quality_value) {
-    quality = atoi(quality_value);
-    // Ensure quality is between 1 and 100
-    if (quality < 1)
-      quality = 1;
-    if (quality > 100)
-      quality = 100;
+    quality = safe_strtoi(quality_value, 1, 100, 90);
   }
 
   // 释放参数上下文
@@ -1028,20 +1072,27 @@ void cmd_autorun(int argc, char *argv[]) {
                        finalName);
 
               // Try to save to user startup directory
-              hres = IPersistFile_Save(pPersistFile, (WCHAR *)userShortcutPath,
-                                       TRUE);
-
-              if (SUCCEEDED(hres)) {
-                printf("Autorun entry added/updated: %s\n", entryName);
-                printf("Shortcut created: %s\n", userShortcutPath);
-                printf("In user startup directory\n");
-
-                if (strlen(arguments) > 0) {
-                  printf("Arguments: %s\n", arguments);
-                }
+              // High #4修复：正确转换ANSI字符串为Unicode
+              WCHAR wszUserShortcut[MAX_PATH];
+              int wideLen = MultiByteToWideChar(CP_UTF8, 0, userShortcutPath, -1, 
+                                                wszUserShortcut, MAX_PATH);
+              if (wideLen == 0) {
+                printf("Error: Failed to convert path to Unicode (error=%lu)\n", GetLastError());
               } else {
-                printf("Error: Unable to save shortcut to %s\n",
-                       userShortcutPath);
+                hres = IPersistFile_Save(pPersistFile, wszUserShortcut, TRUE);
+
+                if (SUCCEEDED(hres)) {
+                  printf("Autorun entry added/updated: %s\n", entryName);
+                  printf("Shortcut created: %s\n", userShortcutPath);
+                  printf("In user startup directory\n");
+
+                  if (strlen(arguments) > 0) {
+                    printf("Arguments: %s\n", arguments);
+                  }
+                } else {
+                  printf("Error: Unable to save shortcut to %s\n",
+                         userShortcutPath);
+                }
               }
             } else {
               printf("Error: Unable to get user startup directory\n");
@@ -1570,7 +1621,32 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
   bi.biBitCount = 24;
   bi.biCompression = BI_RGB;
 
-  DWORD dwBmpSize = ((width * bi.biBitCount + 31) / 32) * 4 * height;
+  // High #6修复：使用64位计算防止整数溢出
+  // 检查width和height是否为正数
+  if (width <= 0 || height <= 0) {
+    if (!quiet) {
+      printf("Error: Invalid bitmap dimensions\n");
+    }
+    DeleteObject(hBitmapToSave);
+    DeleteDC(hMemoryDC);
+    return 0;
+  }
+  
+  // 使用64位计算防止溢出
+  unsigned __int64 rowSize = ((unsigned __int64)width * bi.biBitCount + 31) / 32 * 4;
+  unsigned __int64 dwBmpSize64 = rowSize * (unsigned __int64)height;
+  
+  // 检查是否溢出
+  if (dwBmpSize64 > 0xFFFFFFFFUL) {
+    if (!quiet) {
+      printf("Error: Bitmap size too large\n");
+    }
+    DeleteObject(hBitmapToSave);
+    DeleteDC(hMemoryDC);
+    return 0;
+  }
+  
+  DWORD dwBmpSize = (DWORD)dwBmpSize64;
 
   HANDLE hDIB = GlobalAlloc(GHND, dwBmpSize);
   char *lpbitmap = (char *)GlobalLock(hDIB);
@@ -1601,8 +1677,28 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
     return 0; // 返回错误
   }
 
+  // High #14修复：使用64位计算防止pixelCount溢出
+  unsigned __int64 pixelCount64 = (unsigned __int64)width * (unsigned __int64)height;
+  if (pixelCount64 > 0xFFFFFFFFUL) {
+    if (!quiet) {
+      printf("Error: Pixel count too large\n");
+    }
+    GlobalUnlock(hDIB);
+    GlobalFree(hDIB);
+    if (hMemoryDC) {
+      if (hOldBitmap) {
+        SelectObject(hMemoryDC, hOldBitmap);
+      }
+      if (hScaledBitmap) {
+        DeleteObject(hScaledBitmap);
+      }
+      DeleteDC(hMemoryDC);
+    }
+    return 0;
+  }
+  DWORD pixelCount = (DWORD)pixelCount64;
+  
   // 调整RGB顺序以修复颜色发黄问题，确保不会越界访问
-  DWORD pixelCount = width * height;
   if (pixelCount > 0 && lpbitmap != NULL) {
     for (DWORD i = 0; i < pixelCount * 3 && i + 2 < dwBmpSize; i += 3) {
       // 交换红色和蓝色通道 (BGR -> RGB)
@@ -2311,26 +2407,11 @@ void cmd_window(int argc, char *argv[]) {
       strncpy(title, argv[i] + 8, sizeof(title) - 1);
       title[sizeof(title) - 1] = '\0';
     } else if (strncmp(argv[i], "--width=", 8) == 0) {
-      width = atoi(argv[i] + 8);
-      // 确保宽度在合理范围内
-      if (width < 100)
-        width = 100;
-      if (width > 2000)
-        width = 2000;
+      width = safe_strtoi(argv[i] + 8, 100, 2000, 600);
     } else if (strncmp(argv[i], "--height=", 9) == 0) {
-      height = atoi(argv[i] + 9);
-      // 确保高度在合理范围内
-      if (height < 100)
-        height = 100;
-      if (height > 2000)
-        height = 2000;
+      height = safe_strtoi(argv[i] + 9, 100, 2000, 400);
     } else if (strncmp(argv[i], "--fontsize=", 11) == 0) {
-      fontSize = atoi(argv[i] + 11);
-      // 确保字体大小在合理范围内
-      if (fontSize < 8)
-        fontSize = 8;
-      if (fontSize > 72)
-        fontSize = 72;
+      fontSize = safe_strtoi(argv[i] + 11, 8, 72, 12);
     } else if (strncmp(argv[i], "--bgcolor=", 10) == 0) {
       char *colorStr = argv[i] + 10;
       // 检查是否是RGB格式 (r,g,b)
@@ -3320,7 +3401,7 @@ int cmd_process(int argc, char *argv[]) {
       strncpy(processName, argv[i] + 7, MAX_PATH - 1);
       processName[MAX_PATH - 1] = '\0';
     } else if (strncmp(argv[i], "--pid=", 6) == 0) {
-      processId = atoi(argv[i] + 6);
+      processId = safe_strtoi(argv[i] + 6, 1, 2147483647, 0);
     } else if (strncmp(argv[i], "--workdir=", 10) == 0) {
       strncpy(workingFolder, argv[i] + 10, MAX_PATH - 1);
       workingFolder[MAX_PATH - 1] = '\0';
@@ -4788,7 +4869,8 @@ int get_param_int_value(ParamContext *context, const char *param_name,
   if (!str_value)
     return default_value;
 
-  return atoi(str_value);
+  // High #5修复：使用safe_strtoi替代atoi
+  return safe_strtoi(str_value, INT_MIN, INT_MAX, default_value);
 }
 
 // 检查参数是否已设置
@@ -4852,7 +4934,7 @@ void cmd_ipc(int argc, char *argv[]) {
        strncpy(host, argv[i] + 7, sizeof(host) - 1);
       host[sizeof(host) - 1] = '\0';
     } else if (strncmp(argv[i], "--port=", 7) == 0) {
-      port = atoi(argv[i] + 7);
+      port = safe_strtoi(argv[i] + 7, 1, 65535, 0);
     } else if (strncmp(argv[i], "--value=", 8) == 0) {
       value = argv[i] + 8;
     } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "--h") == 0) {

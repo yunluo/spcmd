@@ -158,7 +158,7 @@ spcmd window --text=message [--title=title] [--width=width] [--height=height] [-
 示例:
 ```bash
 spcmd window --text="Hello World"
-spcmd window --text="Line 1\nLine 2\nLine 3" --title="Multi-line Text" --width=500 --height=300
+spcmd window --text="Line 1\nLine 2\nLine 3呃呃呃" --title="Multi-line Text版本" --width=500 --height=300
 spcmd window --text="Red background window" --bgcolor=red --fontsize=20
 spcmd window --text="Blue text on yellow background" --bgcolor=yellow --textcolor=blue
 spcmd window --text="Bold text example" --bold
