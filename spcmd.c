@@ -573,7 +573,6 @@ void cmd_screenshot(int argc, char *argv[]) {
       DeleteObject(hBitmap);
       DeleteDC(hMemoryDC);
       ReleaseDC(NULL, hScreenDC);
-      free_param_context(context);
       return;
     }
 
@@ -613,8 +612,18 @@ void cmd_screenshot(int argc, char *argv[]) {
                 // Output the base64 data to console
                 printf("%s", base64_data);
                 free(base64_data);
-              }
-            }
+  }
+}
+
+// 释放进程ID列表
+void free_pid_list(ProcessIdList *pidList) {
+  if (pidList) {
+    if (pidList->pids) {
+      free(pidList->pids);
+    }
+    free(pidList);
+  }
+}
             free(file_data);
           }
         }
@@ -2632,7 +2641,11 @@ void cmd_window(int argc, char *argv[]) {
 
   // 消息循环
   MSG msg;
-  while (GetMessage(&msg, NULL, 0, 0)) { // NULL接收线程所有窗口消息，包括WM_QUIT
+  int ret;
+  while ((ret = GetMessage(&msg, NULL, 0, 0)) != 0) {
+    if (ret == -1) {
+      break;
+    }
     if (msg.message == WM_QUIT) {
       break;
     }
@@ -3643,6 +3656,16 @@ BOOL kill_process_by_name(const char *processName) {
   return found;
 }
 
+// 释放进程ID列表
+void free_pid_list(ProcessIdList *pidList) {
+  if (pidList) {
+    if (pidList->pids) {
+      free(pidList->pids);
+    }
+    free(pidList);
+  }
+}
+
 // 获取系统时间戳（毫秒）
 uint64_t get_current_timestamp_ms() {
   FILETIME ft;
@@ -3758,6 +3781,7 @@ uint64_t generate_snowflake_id(snowflake_generator *sf) {
         timestamp = get_current_timestamp_ms();
         wait_count++;
         if (wait_count > 1000) {
+          timestamp = sf->last_timestamp + 1;
           break;
         }
       }
