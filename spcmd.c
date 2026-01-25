@@ -2437,6 +2437,9 @@ void cmd_window(int argc, char *argv[]) {
   if (!params) {
     printf("Error: Memory allocation failed.\n");
     free(processedMessage);
+    if (modal) {
+      EnumWindows(EnumWindowsProcEnable, (LPARAM)NULL);
+    }
     return;
   }
 
@@ -2482,7 +2485,17 @@ void cmd_window(int argc, char *argv[]) {
   wchar_t *wideTitle = (wchar_t *)malloc(titleLen * sizeof(wchar_t));
   if (!wideTitle) {
     printf("Error: Memory allocation failed\n");
-    free_param_context(context);
+    // 清理已分配的资源
+    DeleteObject((HBRUSH)wc.hbrBackground);
+    UnregisterClassA("WindowClass", GetModuleHandle(NULL));
+    if (params->onClickCommand) {
+      free(params->onClickCommand);
+    }
+    free(params);
+    free(processedMessage);
+    if (modal) {
+      EnumWindows(EnumWindowsProcEnable, (LPARAM)NULL);
+    }
     return;
   }
   MultiByteToWideChar(CP_UTF8, 0, title, -1, wideTitle, titleLen);
@@ -2490,8 +2503,18 @@ void cmd_window(int argc, char *argv[]) {
   char *ansiTitle = (char *)malloc(ansiLen);
   if (!ansiTitle) {
     printf("Error: Memory allocation failed\n");
+    // 清理已分配的资源
     free(wideTitle);
-    free_param_context(context);
+    DeleteObject((HBRUSH)wc.hbrBackground);
+    UnregisterClassA("WindowClass", GetModuleHandle(NULL));
+    if (params->onClickCommand) {
+      free(params->onClickCommand);
+    }
+    free(params);
+    free(processedMessage);
+    if (modal) {
+      EnumWindows(EnumWindowsProcEnable, (LPARAM)NULL);
+    }
     return;
   }
   WideCharToMultiByte(CP_ACP, 0, wideTitle, -1, ansiTitle, ansiLen, NULL, NULL);
