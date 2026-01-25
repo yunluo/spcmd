@@ -2004,6 +2004,7 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
                                LPARAM lParam) {
   static WindowParams *params = NULL;
   static HFONT hFont = NULL;
+  static BOOL usingStockFont = FALSE;  // 标记是否使用了库存字体
   static HWND hButton = NULL;
   static BOOL flashTimerActive = FALSE; // 闪亮定时器状态
   static UINT_PTR flashTimerId = 0;     // 闪亮定时器ID
@@ -2013,6 +2014,7 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     // 获取传递的参数
     CREATESTRUCT *pcs = (CREATESTRUCT *)lParam;
     params = (WindowParams *)pcs->lpCreateParams;
+    usingStockFont = FALSE;  // 重置库存字体标记
 
     // 调试输出
     if (params) {
@@ -2026,7 +2028,7 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     if (!hFont) {
       hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
                           params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
-                          FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
+                          FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                           CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
                           DEFAULT_PITCH | FF_SWISS, L"微软雅黑");
     }
@@ -2035,7 +2037,7 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     if (!hFont) {
       hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
                           params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
-                          FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
+                          FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                           CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
                           DEFAULT_PITCH | FF_SWISS, L"宋体");
     }
@@ -2044,7 +2046,7 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     if (!hFont) {
       hFont = CreateFontW(params ? params->fontSize : 18, 0, 0, 0,
                           params && params->bold ? FW_BOLD : FW_NORMAL, FALSE,
-                          FALSE, FALSE, GB2312_CHARSET, OUT_DEFAULT_PRECIS,
+                          FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                           CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
                           DEFAULT_PITCH | FF_SWISS, L"黑体");
     }
@@ -2052,6 +2054,7 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     // 如果以上字体都不可用，使用系统默认GUI字体
     if (!hFont) {
       hFont = GetStockObject(DEFAULT_GUI_FONT);
+      usingStockFont = TRUE;  // 标记使用了库存字体
     }
 
     // 加载系统信息图标
@@ -2259,8 +2262,8 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
       hButton = NULL;
     }
 
-    // 清理字体资源
-    if (hFont) {
+    // 清理字体资源 - 仅删除自己创建的字体，不删除库存对象
+    if (hFont && !usingStockFont) {
       DeleteObject(hFont);
       hFont = NULL;
     }
