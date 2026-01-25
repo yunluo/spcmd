@@ -263,14 +263,33 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
     // 如果无法获取命令行参数，至少要有一个参数（程序名）
     argc = 1;
     argv = (char **)malloc(sizeof(char *));
+    if (!argv) {
+      printf("Error: Memory allocation failed\n");
+      return 1;
+    }
     argv[0] = (char *)"spcmd.exe";
   } else {
     // 转换宽字符参数为多字节字符（使用UTF-8编码，解决跨地区乱码问题）
     argv = (char **)malloc(argc * sizeof(char *));
+    if (!argv) {
+      printf("Error: Memory allocation failed\n");
+      LocalFree(argvW);
+      return 1;
+    }
     for (int i = 0; i < argc; i++) {
       int len =
           WideCharToMultiByte(CP_UTF8, 0, argvW[i], -1, NULL, 0, NULL, NULL);
       argv[i] = (char *)malloc(len * sizeof(char));
+      if (!argv[i]) {
+        printf("Error: Memory allocation failed\n");
+        // 清理已分配的内存
+        for (int j = 0; j < i; j++) {
+          free(argv[j]);
+        }
+        free(argv);
+        LocalFree(argvW);
+        return 1;
+      }
       WideCharToMultiByte(CP_UTF8, 0, argvW[i], -1, argv[i], len, NULL, NULL);
     }
     // 释放系统分配的宽字符参数
@@ -2393,6 +2412,10 @@ void cmd_window(int argc, char *argv[]) {
 
   // 处理命令行参数中的换行符（将\\n替换为\n）
   char *processedMessage = (char *)malloc(strlen(message) * 2 + 1);
+  if (!processedMessage) {
+    printf("Error: Memory allocation failed\n");
+    return;
+  }
   int j = 0;
   for (int i = 0; message[i] != '\0'; i++) {
     if (message[i] == '\\' && message[i + 1] == 'n') {
@@ -2457,18 +2480,25 @@ void cmd_window(int argc, char *argv[]) {
   // 将UTF-8标题转换为ANSI（用于CreateWindowExA）
   int titleLen = MultiByteToWideChar(CP_UTF8, 0, title, -1, NULL, 0);
   wchar_t *wideTitle = (wchar_t *)malloc(titleLen * sizeof(wchar_t));
-  if (wideTitle) {
-    MultiByteToWideChar(CP_UTF8, 0, title, -1, wideTitle, titleLen);
-    int ansiLen = WideCharToMultiByte(CP_ACP, 0, wideTitle, -1, NULL, 0, NULL, NULL);
-    char *ansiTitle = (char *)malloc(ansiLen);
-    if (ansiTitle) {
-      WideCharToMultiByte(CP_ACP, 0, wideTitle, -1, ansiTitle, ansiLen, NULL, NULL);
-      strncpy(title, ansiTitle, sizeof(title) - 1);
-      title[sizeof(title) - 1] = '\0';
-      free(ansiTitle);
-    }
-    free(wideTitle);
+  if (!wideTitle) {
+    printf("Error: Memory allocation failed\n");
+    free_param_context(context);
+    return;
   }
+  MultiByteToWideChar(CP_UTF8, 0, title, -1, wideTitle, titleLen);
+  int ansiLen = WideCharToMultiByte(CP_ACP, 0, wideTitle, -1, NULL, 0, NULL, NULL);
+  char *ansiTitle = (char *)malloc(ansiLen);
+  if (!ansiTitle) {
+    printf("Error: Memory allocation failed\n");
+    free(wideTitle);
+    free_param_context(context);
+    return;
+  }
+  WideCharToMultiByte(CP_ACP, 0, wideTitle, -1, ansiTitle, ansiLen, NULL, NULL);
+  strncpy(title, ansiTitle, sizeof(title) - 1);
+  title[sizeof(title) - 1] = '\0';
+  free(ansiTitle);
+  free(wideTitle);
 
    // 创建窗口
   HWND hwnd = CreateWindowExA(WS_EX_TOPMOST | WS_EX_APPWINDOW, // 强制顶层显示
@@ -3403,6 +3433,13 @@ ProcessIdList *get_pids_by_exe_name(const char *exeName) {
   pidList->count = 0;
   pidList->capacity = 10; // 初始容量
   pidList->pids = (DWORD *)malloc(sizeof(DWORD) * pidList->capacity);
+  if (!pidList->pids) {
+    free(pidList);
+    if (hSnapshot != INVALID_HANDLE_VALUE) {
+      CloseHandle(hSnapshot);
+    }
+    return NULL;
+  }
 
   if (pidList->pids == NULL) {
     free(pidList);
