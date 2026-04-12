@@ -16,7 +16,7 @@
 //==============================================================================
 // 版本信息
 //==============================================================================
-#define SPCMD_VERSION "7.6.0"
+#define SPCMD_VERSION "7.7.0"
 
 //==============================================================================
 // 预处理宏定义
@@ -157,6 +157,11 @@ BOOL ElevatePrivileges(int argc, char *argv[]);
 BOOL GetStartupPath(BOOL forAllUsers, char *path, int pathSize);
 BOOL GetWindowsVersionSafe(DWORD *major, DWORD *minor);
 char *resolve_system_variables(const char *input);
+void cmd_uuid(int argc, char *argv[]);
+void cmd_snowflake(int argc, char *argv[]);
+void cmd_getenv(int argc, char *argv[]);
+void cmd_time(int argc, char *argv[]);
+void cmd_date(int argc, char *argv[]);
 
 // High #5修复：安全的字符串转整数函数声明
 static int safe_strtoi(const char *str, int min_val, int max_val, int default_val);
@@ -195,6 +200,11 @@ Command command_table[] = {
     {"floating", (void (*)(int, char **))cmd_floating, 0},
     {"timesync", (void (*)(int, char **))cmd_timesync, 0},
     {"ipc", (void (*)(int, char **))cmd_ipc, 0},
+    {"uuid", (void (*)(int, char **))cmd_uuid, 0},
+    {"snowflake", (void (*)(int, char **))cmd_snowflake, 0},
+    {"getenv", (void (*)(int, char **))cmd_getenv, 0},
+    {"time", (void (*)(int, char **))cmd_time, 0},
+    {"date", (void (*)(int, char **))cmd_date, 0},
     {NULL, NULL, 0}
 };
 
@@ -273,6 +283,9 @@ static int safe_strtoi(const char *str, int min_val, int max_val, int default_va
 //==============================================================================
 int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
                    LPSTR _lpCmdLine, int _nCmdShow) {
+  // 初始化随机数种子
+  srand((unsigned int)time(NULL));
+
   // 初始化Winsock
   WSADATA wsaData;
   int wsaInit = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -612,18 +625,8 @@ void cmd_screenshot(int argc, char *argv[]) {
                 // Output the base64 data to console
                 printf("%s", base64_data);
                 free(base64_data);
-  }
-}
-
-// 释放进程ID列表
-void free_pid_list(ProcessIdList *pidList) {
-  if (pidList) {
-    if (pidList->pids) {
-      free(pidList->pids);
-    }
-    free(pidList);
-  }
-}
+              }
+            }
             free(file_data);
           }
         }
@@ -1707,9 +1710,10 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
   }
   DWORD pixelCount = (DWORD)pixelCount64;
   
-  // 调整RGB顺序以修复颜色发黄问题，确保不会越界访问
+  // 调整RGB顺序以修复颜色发黄问题，使用64位计算防止溢出
   if (pixelCount > 0 && lpbitmap != NULL) {
-    for (DWORD i = 0; i < pixelCount * 3 && i + 2 < dwBmpSize; i += 3) {
+    unsigned __int64 pixelDataSize = (unsigned __int64)pixelCount * 3;
+    for (DWORD i = 0; i + 2 < dwBmpSize && (unsigned __int64)i < pixelDataSize; i += 3) {
       // 交换红色和蓝色通道 (BGR -> RGB)
       char temp = lpbitmap[i];
       lpbitmap[i] = lpbitmap[i + 2];
@@ -2574,6 +2578,8 @@ void cmd_window(int argc, char *argv[]) {
   int y = (screenHeight - height) / 2;
 
   // 将UTF-8标题转换为ANSI（用于CreateWindowExA）
+  // 注意：命令行参数经过WinMain已转换为UTF-8，所以使用CP_UTF8解码
+  // --encoding参数仅用于从文件读取的文本内容
   int titleLen = MultiByteToWideChar(CP_UTF8, 0, title, -1, NULL, 0);
   wchar_t *wideTitle = (wchar_t *)malloc(titleLen * sizeof(wchar_t));
   if (!wideTitle) {
@@ -3178,18 +3184,16 @@ void cmd_config(int argc, char *argv[]) {
     if (result == 0) {
       struct IniEntry *entry = find_ini_entry(&data, section, key);
       if (entry) {
-        // 直接输出值，方便其他程序使用
         printf("%s\n", entry->value);
       } else {
         printf("Error: Entry not found\n");
       }
-      free_ini_data(&data);
     } else if (result == -1) {
       printf("Error: Unable to open file %s\n", filePath);
     } else {
       printf("Error: Parse error on line %d\n", result);
-      free_ini_data(&data);
     }
+    free_ini_data(&data);
   } else if (strcmp(action, "set") == 0) {
     // 写入INI文件 - 尝试写入系统目录需要管理员权限
     if (!hasSection || !hasKey || !hasValue) {
@@ -3679,10 +3683,10 @@ uint64_t get_current_timestamp_ms() {
 
 // 生成UUID v4
 void generate_uuid_v4(char *uuid_str) {
-  // 生成随机数据
+  // 生成随机数据，使用位运算避免整数溢出
   uint32_t data[4];
   for (int i = 0; i < 4; i++) {
-    data[i] = rand() * RAND_MAX + rand();
+    data[i] = (((uint32_t)rand() << 16) & 0xFFFF0000) | ((uint32_t)rand() & 0xFFFF);
   }
 
   // 设置UUID版本（第13位为0100）
@@ -3702,9 +3706,9 @@ void generate_uuid_v7(char *uuid_str) {
   // 获取当前时间戳（毫秒）
   uint64_t timestamp = get_current_timestamp_ms();
 
-  // 生成随机数据，使用更安全的方式避免整数溢出
-  uint32_t rand_a = ((unsigned int)rand() << 16) | (unsigned int)rand();
-  uint32_t rand_b = ((unsigned int)rand() << 16) | (unsigned int)rand();
+  // 生成随机数据，先转换再移位，避免未定义行为
+  uint32_t rand_a = ((((uint32_t)rand()) << 16) & 0xFFFF0000) | (((uint32_t)rand()) & 0xFFFF);
+  uint32_t rand_b = ((((uint32_t)rand()) << 16) & 0xFFFF0000) | (((uint32_t)rand()) & 0xFFFF);
 
   // UUID v7格式：
   // 时间戳（48位）+ 随机数（12位）+ 版本（4位）+ 变体（2位）+ 随机数（62位）
@@ -5155,4 +5159,117 @@ void cmd_timesync(int argc, char *argv[]) {
   } else {
     printf("Error: Failed to parse NTP response\n");
   }
+}
+
+//==============================================================================
+// 命令实现 - UUID生成
+//==============================================================================
+void cmd_uuid(int argc, char *argv[]) {
+  int version = 4; // 默认UUID v4
+
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "--h") == 0) {
+      printf("UUID generation command usage:\n\n");
+      printf("  spcmd uuid          - Generate UUID v4 (random)\n");
+      printf("  spcmd uuid 4         - Generate UUID v4 (random)\n");
+      printf("  spcmd uuid 7         - Generate UUID v7 (timestamp-based)\n\n");
+      printf("Examples:\n");
+      printf("  spcmd uuid\n");
+      printf("  spcmd uuid 4\n");
+      printf("  spcmd uuid 7\n");
+      return;
+    } else if (argv[i][0] != '-' && atoi(argv[i]) > 0) {
+      version = atoi(argv[i]);
+      if (version != 4 && version != 7) {
+        printf("Error: Unsupported UUID version %d. Use 4 or 7.\n", version);
+        return;
+      }
+    }
+  }
+
+  char uuid_str[37];
+  if (version == 7) {
+    generate_uuid_v7(uuid_str);
+  } else {
+    generate_uuid_v4(uuid_str);
+  }
+  printf("%s\n", uuid_str);
+}
+
+//==============================================================================
+// 命令实现 - Snowflake ID生成
+//==============================================================================
+void cmd_snowflake(int argc, char *argv[]) {
+  if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
+    printf("Snowflake ID generation command usage:\n\n");
+    printf("  spcmd snowflake  - Generate a unique Snowflake ID\n\n");
+    printf("Snowflake ID is a 64-bit unique identifier composed of:\n");
+    printf("  - Timestamp (42 bits)\n");
+    printf("  - Node ID (10 bits)\n");
+    printf("  - Sequence (12 bits)\n\n");
+    printf("Example:\n");
+    printf("  spcmd snowflake\n");
+    return;
+  }
+
+  snowflake_generator sf = init_snowflake();
+  uint64_t id = generate_snowflake_id(&sf);
+  printf("%I64u\n", id);
+}
+
+//==============================================================================
+// 命令实现 - 获取环境变量
+//==============================================================================
+void cmd_getenv(int argc, char *argv[]) {
+  if (argc < 3 || strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0) {
+    printf("Get environment variable command usage:\n\n");
+    printf("  spcmd getenv VARIABLE_NAME  - Get the value of an environment variable\n\n");
+    printf("Examples:\n");
+    printf("  spcmd getenv PATH\n");
+    printf("  spcmd getenv WINDIR\n");
+    printf("  spcmd getenv USERNAME\n");
+    return;
+  }
+
+  const char *var_name = argv[2];
+  char *var_value = getenv(var_name);
+  if (var_value) {
+    printf("%s\n", var_value);
+  } else {
+    printf("Error: Environment variable '%s' not found\n", var_name);
+  }
+}
+
+//==============================================================================
+// 命令实现 - 获取当前时间
+//==============================================================================
+void cmd_time(int argc, char *argv[]) {
+  if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
+    printf("Get current time command usage:\n\n");
+    printf("  spcmd time  - Display current system time\n\n");
+    printf("Example:\n");
+    printf("  spcmd time\n");
+    return;
+  }
+
+  SYSTEMTIME st;
+  GetLocalTime(&st);
+  printf("%02d:%02d:%02d\n", st.wHour, st.wMinute, st.wSecond);
+}
+
+//==============================================================================
+// 命令实现 - 获取当前日期
+//==============================================================================
+void cmd_date(int argc, char *argv[]) {
+  if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
+    printf("Get current date command usage:\n\n");
+    printf("  spcmd date  - Display current system date\n\n");
+    printf("Example:\n");
+    printf("  spcmd date\n");
+    return;
+  }
+
+  SYSTEMTIME st;
+  GetLocalTime(&st);
+  printf("%04d-%02d-%02d\n", st.wYear, st.wMonth, st.wDay);
 }
