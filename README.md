@@ -554,19 +554,27 @@ SOFTWARE.
 
 ## 更新日志
 
-### v7.7.0.0 (2026-04-12)
-- **新增命令**
-  - `uuid` - UUID v4/v7 生成器
-  - `snowflake` - 雪花ID生成器
-  - `getenv` - 获取环境变量
-  - `time` - 获取当前时间
-  - `date` - 获取当前日期
+### v7.7.0.0 (2026-04-26)
+- **安全修复**
+  - UUID v4/v7 使用 CryptGenRandom 替代 rand() 生成加密安全随机数
+  - 修复 WindowWndProc onClick 命令注入漏洞（移除 cmd /c 包装）
+  - cmd_ipc 添加 inet_addr 返回值验证
 - **Bug修复**
   - 修复 cmd_screenshot 函数结构错乱问题
   - 修复 free_pid_list 重复定义问题
   - 修复 BGR 交换循环边界检查问题
   - 修复 cmd_config ini_parse 错误处理一致性问题
   - 修复 UUID v4/v7 随机数生成的位运算溢出问题
+  - 修复 UUID v7 时间戳位布局错误（uint16_t 溢出导致 timestamp 截断）
+  - 修复 handle_command() 中使用 exit() 导致资源泄漏
+  - 修复 get_pids_by_exe_name() 重复 NULL 检查
+  - 修复 cmd_uuid 使用 atoi 改为 safe_strtoi
+  - 修复 cmd_config fclose 返回值未检查
+- **兼容性改进**
+  - CoInitialize() 改为 CoInitializeEx() 明确 STA 模型
+  - srand() 种子改进为 time() ^ clock() 增加熵
+  - 窗口类名 "WindowClass" 改为 "SPCMDWindowClass_v1" 避免冲突
+  - GetMessage() 循环正确处理 -1 返回值
 - **代码优化**
   - 初始化随机数种子 srand(time(NULL))
   - 改进边界检查，使用64位计算防止溢出
