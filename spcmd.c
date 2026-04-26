@@ -2307,18 +2307,15 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
        // 如果有onClickCommand，执行它
       if (params && params->onClickCommand && params->onClickCommand[0] != '\0') {
         printf("Executing on-click command: %s\n", params->onClickCommand);
-        // 使用CreateProcess执行命令，不等待进程完成
+        // 使用CreateProcess直接执行避免cmd /c注入风险
         STARTUPINFO si = {0};
         PROCESS_INFORMATION pi = {0};
         si.cb = sizeof(si);
         si.dwFlags = STARTF_USESHOWWINDOW;
         si.wShowWindow = SW_HIDE;
 
-        // 构建命令行
-        char cmdLine[1024];
-        snprintf(cmdLine, sizeof(cmdLine), "cmd /c \"%s\"", params->onClickCommand);
-
-        if (CreateProcess(NULL, cmdLine, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        if (CreateProcess(NULL, params->onClickCommand, NULL, NULL, FALSE,
+                          CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
           CloseHandle(pi.hProcess);
           CloseHandle(pi.hThread);
         }
@@ -5061,6 +5058,13 @@ void cmd_ipc(int argc, char *argv[]) {
   server.sin_family = AF_INET;
   server.sin_addr.s_addr = inet_addr(host);
   server.sin_port = htons(port);
+
+  if (server.sin_addr.s_addr == INADDR_NONE) {
+    printf("Error: Invalid IP address: %s\n", host);
+    closesocket(sock);
+    WSACleanup();
+    return;
+  }
 
   if (connect(sock, (struct sockaddr*)&server, sizeof(server)) == SOCKET_ERROR) {
     printf("Error: Cannot connect to %s:%d, error: %d\n", host, port, WSAGetLastError());
