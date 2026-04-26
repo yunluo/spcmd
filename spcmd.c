@@ -40,6 +40,7 @@
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <shobjidl.h>
+#include <wincrypt.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -121,7 +122,7 @@ typedef struct {
 //==============================================================================
 // 函数声明 - 命令处理
 //==============================================================================
-void handle_command(int argc, char *argv[]);
+int handle_command(int argc, char *argv[]);
 void cmd_screenshot(int argc, char *argv[]);
 void cmd_shortcut(int argc, char *argv[]);
 void cmd_autorun(int argc, char *argv[]);
@@ -283,8 +284,9 @@ static int safe_strtoi(const char *str, int min_val, int max_val, int default_va
 //==============================================================================
 int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
                    LPSTR _lpCmdLine, int _nCmdShow) {
-  // 初始化随机数种子
-  srand((unsigned int)time(NULL));
+  // 初始化随机数种子 - 使用time和clock的组合增加熵
+  // 注意: 对于UUID生成,应使用CryptGenRandom代替rand()
+  srand((unsigned int)((DWORD_PTR)time(NULL) ^ (DWORD_PTR)clock()));
 
   // 初始化Winsock
   WSADATA wsaData;
@@ -360,7 +362,7 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
   }
 
   // 处理命令
-  handle_command(argc, argv);
+  int exitCode = handle_command(argc, argv);
 
   // 释放内存
   for (int i = 0; i < argc; i++) {
@@ -371,15 +373,15 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
   // 清理Winsock
   WSACleanup();
 
-  return 0;
+  return exitCode;
 }
 
-void handle_command(int argc, char *argv[]) {
+int handle_command(int argc, char *argv[]) {
   // 创建解析后的参数数组
   char **resolved_argv = (char **)malloc(argc * sizeof(char *));
   if (!resolved_argv) {
     printf("Error: Memory allocation failed\n");
-    return;
+    return 1;
   }
 
   // 解析所有参数中的系统变量
@@ -394,7 +396,7 @@ void handle_command(int argc, char *argv[]) {
         }
         free(resolved_argv);
         printf("Error: Memory allocation failed\n");
-        return;
+        return 1;
       }
     }
   }
@@ -414,7 +416,7 @@ void handle_command(int argc, char *argv[]) {
       }
     }
     free(resolved_argv);
-    return;
+    return 1;
   }
 
   for (int i = 0; command_table[i].name != NULL; i++) {
@@ -427,7 +429,7 @@ void handle_command(int argc, char *argv[]) {
           int result = cmd_process(argc, resolved_argv);
           if (result != 0) {
             // 注意：在调用exit之前手动释放内存实际上是不必要的
-            exit(result); // 如果check命令返回非0值，退出程序
+            return result;
           }
         }
       } else {
@@ -452,6 +454,8 @@ void handle_command(int argc, char *argv[]) {
     }
   }
   free(resolved_argv);
+
+  return 0;
 }
 
 void cmd_screenshot(int argc, char *argv[]) {
@@ -781,7 +785,7 @@ void cmd_shortcut(int argc, char *argv[]) {
   snprintf(shortcutPath, MAX_PATH, "%s\\%s", desktopPath, finalName);
 
    // Create shortcut
-  HRESULT hres = CoInitialize(NULL);
+  HRESULT hres = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
   if (FAILED(hres)) {
     printf("Error: Failed to initialize COM (hr=0x%08lX)\n", (unsigned long)hres);
     return;
@@ -1011,7 +1015,7 @@ void cmd_autorun(int argc, char *argv[]) {
   } else {
     // Add or update autorun entry (create shortcut)
 
-    CoInitialize(NULL);
+    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 
     IShellLinkA *pShellLink = NULL;
     HRESULT hres =
@@ -2564,7 +2568,7 @@ void cmd_window(int argc, char *argv[]) {
   WNDCLASSA wc = {0};
   wc.lpfnWndProc = WindowWndProc;
   wc.hInstance = GetModuleHandle(NULL);
-  wc.lpszClassName = "WindowClass";
+  wc.lpszClassName = "SPCMDWindowClass_v1";
   wc.hbrBackground = CreateSolidBrush(bgColor); // 使用指定的背景色
   wc.hCursor = LoadCursor(NULL, IDC_ARROW);
   wc.hIcon = LoadIconA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDI_ICON1));
@@ -2586,7 +2590,7 @@ void cmd_window(int argc, char *argv[]) {
     printf("Error: Memory allocation failed\n");
     // 清理已分配的资源
     DeleteObject((HBRUSH)wc.hbrBackground);
-    UnregisterClassA("WindowClass", GetModuleHandle(NULL));
+    UnregisterClassA("SPCMDWindowClass_v1", GetModuleHandle(NULL));
     if (params->onClickCommand) {
       free(params->onClickCommand);
     }
@@ -2605,7 +2609,7 @@ void cmd_window(int argc, char *argv[]) {
     // 清理已分配的资源
     free(wideTitle);
     DeleteObject((HBRUSH)wc.hbrBackground);
-    UnregisterClassA("WindowClass", GetModuleHandle(NULL));
+    UnregisterClassA("SPCMDWindowClass_v1", GetModuleHandle(NULL));
     if (params->onClickCommand) {
       free(params->onClickCommand);
     }
@@ -2624,7 +2628,7 @@ void cmd_window(int argc, char *argv[]) {
 
    // 创建窗口
   HWND hwnd = CreateWindowExA(WS_EX_TOPMOST | WS_EX_APPWINDOW, // 强制顶层显示
-                  "WindowClass",
+                  "SPCMDWindowClass_v1",
                   title, // 使用转换后的ANSI标题
                   noDrag ? (WS_POPUP | WS_SYSMENU | WS_VISIBLE)
                          : // 禁止拖拽时使用弹出窗口样式
@@ -2636,7 +2640,7 @@ void cmd_window(int argc, char *argv[]) {
   if (!hwnd) {
     printf("Error: Failed to create window, error: %lu\n", GetLastError());
     DeleteObject((HBRUSH)wc.hbrBackground);
-    UnregisterClassA("WindowClass", GetModuleHandle(NULL));
+    UnregisterClassA("SPCMDWindowClass_v1", GetModuleHandle(NULL));
     free(params);
     free(processedMessage);
     if (modal) {
@@ -2661,7 +2665,7 @@ void cmd_window(int argc, char *argv[]) {
 
    // 注销窗口类前删除背景画刷
   DeleteObject((HBRUSH)wc.hbrBackground);
-  UnregisterClassA("WindowClass", GetModuleHandle(NULL));
+  UnregisterClassA("SPCMDWindowClass_v1", GetModuleHandle(NULL));
 
   // 如果是模态弹窗，重新启用所有窗口
   if (modal) {
@@ -2951,13 +2955,13 @@ void cmd_notify(int argc, char *argv[]) {
     WNDCLASSW wc = {0};
     wc.lpfnWndProc = DefWindowProcW;
     wc.hInstance = GetModuleHandle(NULL);
-    wc.lpszClassName = L"NotifyWindowClass";
+    wc.lpszClassName = L"NotifySPCMDWindowClass_v1";
     wc.hIcon = LoadIconA(GetModuleHandle(NULL), MAKEINTRESOURCEA(IDI_ICON1));
 
     if (RegisterClassW(&wc)) {
       // 创建隐藏窗口 - 使用Unicode版本
       HWND hwnd =
-          CreateWindowExW(0, L"NotifyWindowClass", L"NotifyWindow", 0, 0, 0, 0,
+          CreateWindowExW(0, L"NotifySPCMDWindowClass_v1", L"NotifyWindow", 0, 0, 0, 0,
                           0, NULL, NULL, GetModuleHandle(NULL), NULL);
 
       if (hwnd) {
@@ -3015,7 +3019,7 @@ void cmd_notify(int argc, char *argv[]) {
       }
 
       // 注销窗口类 - 使用Unicode版本
-      UnregisterClassW(L"NotifyWindowClass", GetModuleHandle(NULL));
+      UnregisterClassW(L"NotifySPCMDWindowClass_v1", GetModuleHandle(NULL));
     } else {
       // 如果无法注册窗口类，回退到MessageBox
       printf("Falling back to MessageBox\n");
@@ -3231,7 +3235,10 @@ void cmd_config(int argc, char *argv[]) {
 
     // 读取现有配置
     struct IniData data = {0};
-    ini_parse(filePath, config_ini_handler, &data);
+    int parseResult = ini_parse(filePath, config_ini_handler, &data);
+    if (parseResult > 0) {
+      printf("Warning: Parse error on line %d, proceeding with partial data\n", parseResult);
+    }
 
     // 查找是否已存在该条目
     struct IniEntry *entry = find_ini_entry(&data, section, key);
@@ -3329,7 +3336,13 @@ void cmd_config(int argc, char *argv[]) {
 
     // 读取现有配置
     struct IniData data = {0};
-    ini_parse(filePath, config_ini_handler, &data);
+    int parseResult = ini_parse(filePath, config_ini_handler, &data);
+    if (parseResult == -1) {
+      printf("Error: File %s does not exist\n", filePath);
+      return;
+    } else if (parseResult > 0) {
+      printf("Warning: Parse error on line %d, proceeding with partial data\n", parseResult);
+    }
 
     // 查找并删除条目
     struct IniEntry *prev = NULL;
@@ -3363,7 +3376,7 @@ void cmd_config(int argc, char *argv[]) {
       return;
     }
 
-     // 写入文件（使用UTF-8 BOM编码）
+    // 写入文件（使用UTF-8 BOM编码）
     FILE *file = fopen(filePath, "wb");
     if (file) {
       // 写入UTF-8 BOM
@@ -3387,8 +3400,11 @@ void cmd_config(int argc, char *argv[]) {
         }
         write_entry = write_entry->next;
       }
-      fclose(file);
-      printf("Configuration saved successfully\n");
+      if (fclose(file) == 0) {
+        printf("Configuration saved successfully\n");
+      } else {
+        printf("Error: Failed to save configuration\n");
+      }
     } else {
       printf("Error: Unable to write to file %s\n", filePath);
     }
@@ -3582,11 +3598,6 @@ ProcessIdList *get_pids_by_exe_name(const char *exeName) {
     return NULL;
   }
 
-  if (pidList->pids == NULL) {
-    free(pidList);
-    return NULL;
-  }
-
   if (hSnapshot != INVALID_HANDLE_VALUE) {
     pe32.dwSize = sizeof(PROCESSENTRY32);
 
@@ -3681,24 +3692,48 @@ uint64_t get_current_timestamp_ms() {
   return timestamp;
 }
 
-// 生成UUID v4
-void generate_uuid_v4(char *uuid_str) {
-  // 生成随机数据，使用位运算避免整数溢出
-  uint32_t data[4];
-  for (int i = 0; i < 4; i++) {
-    data[i] = (((uint32_t)rand() << 16) & 0xFFFF0000) | ((uint32_t)rand() & 0xFFFF);
+// 获取加密安全的随机字节
+static BOOL get_secure_random_bytes(BYTE *buffer, DWORD length) {
+  HCRYPTPROV hCryptProv;
+  BOOL result = CryptAcquireContext(&hCryptProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT);
+  if (!result) {
+    // 如果加密上下文获取失败，回退到rand()
+    for (DWORD i = 0; i < length; i++) {
+      buffer[i] = (BYTE)(rand() & 0xFF);
+    }
+    return FALSE;
   }
 
-  // 设置UUID版本（第13位为0100）
-  data[1] = (data[1] & 0xFFFF0FFF) | 0x00004000;
+  result = CryptGenRandom(hCryptProv, length, buffer);
+  CryptReleaseContext(hCryptProv, 0);
+  return result;
+}
 
+// 生成UUID v4
+void generate_uuid_v4(char *uuid_str) {
+  // 使用加密安全的随机数生成器
+  BYTE random_bytes[16];
+  if (!get_secure_random_bytes(random_bytes, 16)) {
+    // 回退到rand() - 不应该发生
+    srand((unsigned int)time(NULL));
+    for (int i = 0; i < 16; i++) {
+      random_bytes[i] = (BYTE)(rand() & 0xFF);
+    }
+  }
+
+  // 设置UUID版本（第13位为0100，表示v4）
+  random_bytes[6] = (random_bytes[6] & 0x0F) | 0x40;
   // 设置变体（第17位为10）
-  data[2] = (data[2] & 0x3FFFFFFF) | 0x80000000;
+  random_bytes[8] = (random_bytes[8] & 0x3F) | 0x80;
 
   // 格式化为UUID字符串
-  snprintf(uuid_str, 37, "%08x-%04x-%04x-%04x-%04x%08x", data[0], data[1] & 0xFFFF,
-          (data[1] >> 16) & 0xFFFF, data[2] & 0xFFFF, (data[2] >> 16) & 0xFFFF,
-          data[3]);
+  snprintf(uuid_str, 37,
+           "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+           random_bytes[0], random_bytes[1], random_bytes[2], random_bytes[3],
+           random_bytes[4], random_bytes[5],
+           random_bytes[6], random_bytes[7],
+           random_bytes[8], random_bytes[9],
+           random_bytes[10], random_bytes[11], random_bytes[12], random_bytes[13], random_bytes[14], random_bytes[15]);
 }
 
 // 生成UUID v7
@@ -3706,36 +3741,47 @@ void generate_uuid_v7(char *uuid_str) {
   // 获取当前时间戳（毫秒）
   uint64_t timestamp = get_current_timestamp_ms();
 
-  // 生成随机数据，先转换再移位，避免未定义行为
-  uint32_t rand_a = ((((uint32_t)rand()) << 16) & 0xFFFF0000) | (((uint32_t)rand()) & 0xFFFF);
-  uint32_t rand_b = ((((uint32_t)rand()) << 16) & 0xFFFF0000) | (((uint32_t)rand()) & 0xFFFF);
+  // 使用加密安全的随机数生成器
+  BYTE random_bytes[10];
+  if (!get_secure_random_bytes(random_bytes, 10)) {
+    // 回退到rand() - 不应该发生
+    srand((unsigned int)time(NULL));
+    for (int i = 0; i < 10; i++) {
+      random_bytes[i] = (BYTE)(rand() & 0xFF);
+    }
+  }
 
   // UUID v7格式：
   // 时间戳（48位）+ 随机数（12位）+ 版本（4位）+ 变体（2位）+ 随机数（62位）
 
-  // 时间戳高位（32位）
-  uint32_t ts_high = (timestamp >> 16) & 0xFFFFFFFF;
+  // 构建各字段
+  uint32_t ts_high = (uint32_t)(timestamp >> 16);  // 高32位时间戳
+  uint16_t ts_low = (uint16_t)(timestamp & 0xFFFF);  // 低16位时间戳
 
-  // 时间戳低位（16位）+ 随机数高位（12位）
-  uint32_t ts_low_rand =
-      ((timestamp & 0xFFFF) << 12) | ((rand_a >> 20) & 0xFFF);
+  // rand_a: 随机数高12位 + 版本4位
+  uint16_t rand_a = ((uint16_t)random_bytes[0] << 8) | random_bytes[1];
+  uint16_t ts_low_rand = (ts_low << 12) | ((rand_a >> 4) & 0x0FFF);  // 时间戳低12位 + 随机数高12位
 
-  // 随机数中位（16位），设置版本为0111（v7）
-  uint32_t rand_mid = (rand_a >> 4) & 0x0FFF; // 清除版本位
-  rand_mid |= 0x7000;                         // 设置版本为7
+  // rand_b: 版本4位 + 变体2位 + 随机数低10位
+  uint16_t rand_b_high = ((uint16_t)random_bytes[2] << 8) | random_bytes[3];
+  uint16_t version_variant = (rand_a & 0x0FFF);  // 清除高位
+  version_variant |= 0x7000;  // 设置版本为7
 
-  // 随机数低位（16位），设置变体为10
-  uint32_t rand_low = rand_b & 0x3FFF; // 清除变体位
-  rand_low |= 0x8000;                  // 设置变体为10
+  uint16_t rand_b_low = ((uint16_t)random_bytes[4] << 8) | random_bytes[5];
+  uint16_t variant_rand = (rand_b_high & 0x3FFF);  // 清除变体位
+  variant_rand |= 0x8000;  // 设置变体为10
+
+  uint32_t rand_c = ((uint32_t)random_bytes[6] << 24) | ((uint32_t)random_bytes[7] << 16) |
+                    ((uint32_t)random_bytes[8] << 8) | random_bytes[9];
 
   // 格式化为UUID字符串
-  // UUID格式：8-4-4-4-12
-  snprintf(uuid_str, 37, "%08x-%04x-%04x-%04x-%04x%08x", ts_high,
-          (ts_low_rand >> 16) & 0xFFFF, // 时间戳低位和随机数高位的高16位
-          ts_low_rand & 0xFFFF,         // 时间戳低位和随机数高位的低16位
-          rand_mid,                     // 版本字段
-          rand_low,                     // 变体位
-          rand_b >> 16);                // 剩余随机数
+  snprintf(uuid_str, 37, "%08x-%04x-%04x-%04x-%04x%08x",
+           ts_high,
+           ts_low_rand,
+           version_variant,
+           variant_rand,
+           rand_b_low,
+           rand_c);
 }
 
 // 雪花ID生成器结构
@@ -4484,7 +4530,7 @@ void cmd_tray(int argc, char *argv[]) {
   printf("Process is running. Creating tray icon...\n");
 
   // 初始化COM库
-  CoInitialize(NULL);
+  CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 
   // 创建托盘图标数据结构
   TrayIconData trayData = {0};
@@ -4505,7 +4551,11 @@ void cmd_tray(int argc, char *argv[]) {
 
   // 消息循环
   MSG msg;
-  while (GetMessage(&msg, NULL, 0, 0)) {
+  int msg_ret;
+  while ((msg_ret = GetMessage(&msg, NULL, 0, 0)) != 0) {
+    if (msg_ret == -1) {
+      break;
+    }
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
@@ -4778,7 +4828,7 @@ void cmd_floating(int argc, char *argv[]) {
   printf("Process is running. Creating floating icon...\n");
 
   // 初始化COM库
-  CoInitialize(NULL);
+  CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 
   // 创建浮动图标数据结构
   FloatingIconData floatingData = {0};
@@ -4797,7 +4847,11 @@ void cmd_floating(int argc, char *argv[]) {
 
   // 消息循环
   MSG msg;
-  while (GetMessage(&msg, NULL, 0, 0)) {
+  int msg_ret;
+  while ((msg_ret = GetMessage(&msg, NULL, 0, 0)) != 0) {
+    if (msg_ret == -1) {
+      break;
+    }
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
@@ -5178,8 +5232,14 @@ void cmd_uuid(int argc, char *argv[]) {
       printf("  spcmd uuid 4\n");
       printf("  spcmd uuid 7\n");
       return;
-    } else if (argv[i][0] != '-' && atoi(argv[i]) > 0) {
-      version = atoi(argv[i]);
+    } else if (argv[i][0] != '-') {
+      int parsedVersion = safe_strtoi(argv[i], INT_MIN, INT_MAX, INT_MIN);
+      if (parsedVersion == INT_MIN) {
+        // Parsing failed (invalid number)
+        printf("Error: Invalid UUID version '%s'. Use 4 or 7.\n", argv[i]);
+        return;
+      }
+      version = parsedVersion;
       if (version != 4 && version != 7) {
         printf("Error: Unsupported UUID version %d. Use 4 or 7.\n", version);
         return;
