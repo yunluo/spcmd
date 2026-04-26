@@ -161,8 +161,6 @@ char *resolve_system_variables(const char *input);
 void cmd_uuid(int argc, char *argv[]);
 void cmd_snowflake(int argc, char *argv[]);
 void cmd_getenv(int argc, char *argv[]);
-void cmd_time(int argc, char *argv[]);
-void cmd_date(int argc, char *argv[]);
 
 // High #5修复：安全的字符串转整数函数声明
 static int safe_strtoi(const char *str, int min_val, int max_val, int default_val);
@@ -205,8 +203,6 @@ Command command_table[] = {
     {"uuid", (void (*)(int, char **))cmd_uuid, 0},
     {"snowflake", (void (*)(int, char **))cmd_snowflake, 0},
     {"getenv", (void (*)(int, char **))cmd_getenv, 0},
-    {"time", (void (*)(int, char **))cmd_time, 0},
-    {"date", (void (*)(int, char **))cmd_date, 0},
     {NULL, NULL, 0}
 };
 
@@ -5359,38 +5355,4 @@ void cmd_getenv(int argc, char *argv[]) {
   } else {
     printf("Error: Environment variable '%s' not found\n", var_name);
   }
-}
-
-//==============================================================================
-// 命令实现 - 获取当前时间
-//==============================================================================
-void cmd_time(int argc, char *argv[]) {
-  if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Get current time command usage:\n\n");
-    printf("  spcmd time  - Display current system time\n\n");
-    printf("Example:\n");
-    printf("  spcmd time\n");
-    return;
-  }
-
-  SYSTEMTIME st;
-  GetLocalTime(&st);
-  printf("%02d:%02d:%02d\n", st.wHour, st.wMinute, st.wSecond);
-}
-
-//==============================================================================
-// 命令实现 - 获取当前日期
-//==============================================================================
-void cmd_date(int argc, char *argv[]) {
-  if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Get current date command usage:\n\n");
-    printf("  spcmd date  - Display current system date\n\n");
-    printf("Example:\n");
-    printf("  spcmd date\n");
-    return;
-  }
-
-  SYSTEMTIME st;
-  GetLocalTime(&st);
-  printf("%04d-%02d-%02d\n", st.wYear, st.wMonth, st.wDay);
 }
