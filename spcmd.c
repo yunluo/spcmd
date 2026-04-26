@@ -173,7 +173,6 @@ static int safe_strtoi(const char *str, int min_val, int max_val, int default_va
 int find_process_by_name(const char *processName, DWORD *processId);
 int find_process_by_keyword(const char *keyword, DWORD *processId);
 BOOL kill_process_by_name(const char *processName);
-BOOL kill_process_by_keyword(const char *keyword);
 ProcessIdList *get_pids_by_exe_name(const char *exeName);
 
 //==============================================================================
@@ -3541,16 +3540,9 @@ int cmd_process(int argc, char *argv[]) {
         return 1;
       }
     } else if (strlen(keyword) > 0) {
-      // Kill by keyword
-      printf("Killing processes matching keyword: %s\n", keyword);
-
-      if (kill_process_by_keyword(keyword)) {
-        return 0;
-      } else {
-        printf("Keyword kill did not terminate all matching processes for '%s'\n",
-               keyword);
-        return 1;
-      }
+      // Kill by keyword is not allowed for safety reasons
+      printf("Error: --keyword is not allowed with --action=kill. Use --name for exact match instead.\n");
+      return 1;
     } else {
       // Kill by name
       printf("Killing process with name: %s\n", processName);
@@ -3735,51 +3727,6 @@ BOOL kill_process_by_name(const char *processName) {
 }
 
 // 通过关键字模糊查找并终止进程
-BOOL kill_process_by_keyword(const char *keyword) {
-  PROCESSENTRY32 pe32;
-  HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-  int matchCount = 0;
-  int terminatedCount = 0;
-
-  if (hSnapshot != INVALID_HANDLE_VALUE) {
-    pe32.dwSize = sizeof(PROCESSENTRY32);
-
-    if (Process32First(hSnapshot, &pe32)) {
-      do {
-        if (StrStrIA(pe32.szExeFile, keyword) != NULL) {
-          matchCount++;
-          HANDLE hProcess =
-              OpenProcess(PROCESS_TERMINATE, FALSE, pe32.th32ProcessID);
-          if (hProcess != NULL) {
-            if (TerminateProcess(hProcess, 0)) {
-              printf("Process '%s' with PID %lu terminated successfully\n",
-                     pe32.szExeFile, pe32.th32ProcessID);
-              terminatedCount++;
-            } else {
-              printf("Error: Unable to terminate process '%s' with PID %lu (Error code: %lu)\n",
-                     pe32.szExeFile, pe32.th32ProcessID, GetLastError());
-            }
-            CloseHandle(hProcess);
-          } else {
-            printf("Error: Unable to open process '%s' with PID %lu (Error code: %lu)\n",
-                   pe32.szExeFile, pe32.th32ProcessID, GetLastError());
-          }
-        }
-      } while (Process32Next(hSnapshot, &pe32));
-    }
-    CloseHandle(hSnapshot);
-  } else {
-    printf("Error: Unable to create process snapshot\n");
-  }
-
-  if (matchCount > 0 && terminatedCount < matchCount) {
-    printf("Error: Terminated %d of %d matching process(es)\n",
-           terminatedCount, matchCount);
-  }
-
-  return matchCount > 0 && terminatedCount == matchCount;
-}
-
 // 释放进程ID列表
 void free_pid_list(ProcessIdList *pidList) {
   if (pidList) {
