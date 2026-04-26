@@ -3714,8 +3714,6 @@ void generate_uuid_v4(char *uuid_str) {
   // 使用加密安全的随机数生成器
   BYTE random_bytes[16];
   if (!get_secure_random_bytes(random_bytes, 16)) {
-    // 回退到rand() - 不应该发生
-    srand((unsigned int)time(NULL));
     for (int i = 0; i < 16; i++) {
       random_bytes[i] = (BYTE)(rand() & 0xFF);
     }
@@ -3738,50 +3736,50 @@ void generate_uuid_v4(char *uuid_str) {
 
 // 生成UUID v7
 void generate_uuid_v7(char *uuid_str) {
-  // 获取当前时间戳（毫秒）
   uint64_t timestamp = get_current_timestamp_ms();
 
-  // 使用加密安全的随机数生成器
   BYTE random_bytes[10];
   if (!get_secure_random_bytes(random_bytes, 10)) {
-    // 回退到rand() - 不应该发生
-    srand((unsigned int)time(NULL));
     for (int i = 0; i < 10; i++) {
       random_bytes[i] = (BYTE)(rand() & 0xFF);
     }
   }
 
-  // UUID v7格式：
-  // 时间戳（48位）+ 随机数（12位）+ 版本（4位）+ 变体（2位）+ 随机数（62位）
+  BYTE uuid_bytes[16];
 
-  // 构建各字段
-  uint32_t ts_high = (uint32_t)(timestamp >> 16);  // 高32位时间戳
-  uint16_t ts_low = (uint16_t)(timestamp & 0xFFFF);  // 低16位时间戳
+  // bytes 0-5 (48 bits): timestamp (big-endian)
+  uuid_bytes[0] = (BYTE)((timestamp >> 40) & 0xFF);
+  uuid_bytes[1] = (BYTE)((timestamp >> 32) & 0xFF);
+  uuid_bytes[2] = (BYTE)((timestamp >> 24) & 0xFF);
+  uuid_bytes[3] = (BYTE)((timestamp >> 16) & 0xFF);
+  uuid_bytes[4] = (BYTE)((timestamp >> 8) & 0xFF);
+  uuid_bytes[5] = (BYTE)(timestamp & 0xFF);
 
-  // rand_a: 随机数高12位 + 版本4位
-  uint16_t rand_a = ((uint16_t)random_bytes[0] << 8) | random_bytes[1];
-  uint16_t ts_low_rand = (ts_low << 12) | ((rand_a >> 4) & 0x0FFF);  // 时间戳低12位 + 随机数高12位
+  // byte 6: version (4 bits = 0x7) | random (4 bits)
+  uuid_bytes[6] = 0x70 | (random_bytes[0] & 0x0F);
 
-  // rand_b: 版本4位 + 变体2位 + 随机数低10位
-  uint16_t rand_b_high = ((uint16_t)random_bytes[2] << 8) | random_bytes[3];
-  uint16_t version_variant = (rand_a & 0x0FFF);  // 清除高位
-  version_variant |= 0x7000;  // 设置版本为7
+  // byte 7: random (8 bits)
+  uuid_bytes[7] = random_bytes[1];
 
-  uint16_t rand_b_low = ((uint16_t)random_bytes[4] << 8) | random_bytes[5];
-  uint16_t variant_rand = (rand_b_high & 0x3FFF);  // 清除变体位
-  variant_rand |= 0x8000;  // 设置变体为10
+  // byte 8: variant (2 bits = 0x2) | random (6 bits)
+  uuid_bytes[8] = 0x80 | (random_bytes[2] & 0x3F);
 
-  uint32_t rand_c = ((uint32_t)random_bytes[6] << 24) | ((uint32_t)random_bytes[7] << 16) |
-                    ((uint32_t)random_bytes[8] << 8) | random_bytes[9];
+  // bytes 9-15: random (56 bits)
+  uuid_bytes[9] = random_bytes[3];
+  uuid_bytes[10] = random_bytes[4];
+  uuid_bytes[11] = random_bytes[5];
+  uuid_bytes[12] = random_bytes[6];
+  uuid_bytes[13] = random_bytes[7];
+  uuid_bytes[14] = random_bytes[8];
+  uuid_bytes[15] = random_bytes[9];
 
-  // 格式化为UUID字符串
-  snprintf(uuid_str, 37, "%08x-%04x-%04x-%04x-%04x%08x",
-           ts_high,
-           ts_low_rand,
-           version_variant,
-           variant_rand,
-           rand_b_low,
-           rand_c);
+  snprintf(uuid_str, 37,
+           "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+           uuid_bytes[0], uuid_bytes[1], uuid_bytes[2], uuid_bytes[3],
+           uuid_bytes[4], uuid_bytes[5],
+           uuid_bytes[6], uuid_bytes[7],
+           uuid_bytes[8], uuid_bytes[9],
+           uuid_bytes[10], uuid_bytes[11], uuid_bytes[12], uuid_bytes[13], uuid_bytes[14], uuid_bytes[15]);
 }
 
 // 雪花ID生成器结构
