@@ -171,7 +171,9 @@ static int safe_strtoi(const char *str, int min_val, int max_val, int default_va
 // 函数声明 - 进程操作
 //==============================================================================
 int find_process_by_name(const char *processName, DWORD *processId);
+int find_process_by_keyword(const char *keyword, DWORD *processId);
 BOOL kill_process_by_name(const char *processName);
+BOOL kill_process_by_keyword(const char *keyword);
 ProcessIdList *get_pids_by_exe_name(const char *exeName);
 
 //==============================================================================
@@ -3417,6 +3419,7 @@ int cmd_process(int argc, char *argv[]) {
   // Parse parameters
   char action[20] = "check"; // default action
   char processName[MAX_PATH] = {0};
+  char keyword[MAX_PATH] = {0};
   DWORD processId = 0;
 
   // Parameters for run action
@@ -3430,6 +3433,9 @@ int cmd_process(int argc, char *argv[]) {
     } else if (strncmp(argv[i], "--name=", 7) == 0) {
       strncpy(processName, argv[i] + 7, MAX_PATH - 1);
       processName[MAX_PATH - 1] = '\0';
+    } else if (strncmp(argv[i], "--keyword=", 10) == 0) {
+      strncpy(keyword, argv[i] + 10, MAX_PATH - 1);
+      keyword[MAX_PATH - 1] = '\0';
     } else if (strncmp(argv[i], "--pid=", 6) == 0) {
       processId = safe_strtoi(argv[i] + 6, 1, 2147483647, 0);
     } else if (strncmp(argv[i], "--workdir=", 10) == 0) {
@@ -3472,8 +3478,8 @@ int cmd_process(int argc, char *argv[]) {
       printf("Error code: %lu\n", GetLastError());
       return 1;
     }
-  } else if (strlen(processName) == 0 && processId == 0) {
-    printf("Error: Either process name or PID must be specified\n");
+  } else if (strlen(processName) == 0 && strlen(keyword) == 0 && processId == 0) {
+    printf("Error: Either process name, keyword, or PID must be specified\n");
     return 1;
   } else if (strcmp(action, "check") == 0) {
     // Check if process exists
@@ -3489,11 +3495,28 @@ int cmd_process(int argc, char *argv[]) {
         printf("Process with PID %lu does not exist\n", processId);
         return 1; // Process does not exist
       }
+    } else if (strlen(keyword) > 0) {
+      // Check by keyword
+      DWORD foundPid = 0;
+      int processCount = find_process_by_keyword(keyword, &foundPid);
+      if (processCount > 0) {
+        printf("Found %d process(es) matching keyword '%s' (first PID: %lu)\n",
+               processCount, keyword, foundPid);
+      } else {
+        printf("No process matching keyword '%s' found\n", keyword);
+      }
+      return processCount > 0 ? 0 : 1;
     } else {
       // Check by name
       DWORD foundPid = 0;
       int processCount = find_process_by_name(processName, &foundPid);
-      return processCount;
+      if (processCount > 0) {
+        printf("Found %d process(es) with name '%s' (first PID: %lu)\n",
+               processCount, processName, foundPid);
+      } else {
+        printf("No process with name '%s' found\n", processName);
+      }
+      return processCount > 0 ? 0 : 1;
     }
   } else if (strcmp(action, "kill") == 0) {
     // Kill process
@@ -3515,6 +3538,17 @@ int cmd_process(int argc, char *argv[]) {
       } else {
         printf("Error: Failed to open process (Error code: %lu)\n",
                GetLastError());
+        return 1;
+      }
+    } else if (strlen(keyword) > 0) {
+      // Kill by keyword
+      printf("Killing processes matching keyword: %s\n", keyword);
+
+      if (kill_process_by_keyword(keyword)) {
+        return 0;
+      } else {
+        printf("Keyword kill did not terminate all matching processes for '%s'\n",
+               keyword);
         return 1;
       }
     } else {
@@ -3570,6 +3604,38 @@ int find_process_by_name(const char *processName, DWORD *processId) {
   }
 
   // 返回找到的进程数量
+  return count;
+}
+
+// 通过关键字模糊查找进程（子串匹配，大小写不敏感）
+int find_process_by_keyword(const char *keyword, DWORD *processId) {
+  PROCESSENTRY32 pe32;
+  HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  int count = 0;
+  DWORD firstProcessId = 0;
+  BOOL foundFirst = FALSE;
+
+  if (hSnapshot != INVALID_HANDLE_VALUE) {
+    pe32.dwSize = sizeof(PROCESSENTRY32);
+
+    if (Process32First(hSnapshot, &pe32)) {
+      do {
+        if (StrStrIA(pe32.szExeFile, keyword) != NULL) {
+          count++;
+          if (!foundFirst) {
+            firstProcessId = pe32.th32ProcessID;
+            foundFirst = TRUE;
+          }
+        }
+      } while (Process32Next(hSnapshot, &pe32));
+    }
+    CloseHandle(hSnapshot);
+  }
+
+  if (processId != NULL && foundFirst) {
+    *processId = firstProcessId;
+  }
+
   return count;
 }
 
@@ -3666,6 +3732,52 @@ BOOL kill_process_by_name(const char *processName) {
   }
 
   return found;
+}
+
+// 通过关键字模糊查找并终止进程
+BOOL kill_process_by_keyword(const char *keyword) {
+  PROCESSENTRY32 pe32;
+  HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  int matchCount = 0;
+  int terminatedCount = 0;
+
+  if (hSnapshot != INVALID_HANDLE_VALUE) {
+    pe32.dwSize = sizeof(PROCESSENTRY32);
+
+    if (Process32First(hSnapshot, &pe32)) {
+      do {
+        if (StrStrIA(pe32.szExeFile, keyword) != NULL) {
+          matchCount++;
+          HANDLE hProcess =
+              OpenProcess(PROCESS_TERMINATE, FALSE, pe32.th32ProcessID);
+          if (hProcess != NULL) {
+            if (TerminateProcess(hProcess, 0)) {
+              printf("Process '%s' with PID %lu terminated successfully\n",
+                     pe32.szExeFile, pe32.th32ProcessID);
+              terminatedCount++;
+            } else {
+              printf("Error: Unable to terminate process '%s' with PID %lu (Error code: %lu)\n",
+                     pe32.szExeFile, pe32.th32ProcessID, GetLastError());
+            }
+            CloseHandle(hProcess);
+          } else {
+            printf("Error: Unable to open process '%s' with PID %lu (Error code: %lu)\n",
+                   pe32.szExeFile, pe32.th32ProcessID, GetLastError());
+          }
+        }
+      } while (Process32Next(hSnapshot, &pe32));
+    }
+    CloseHandle(hSnapshot);
+  } else {
+    printf("Error: Unable to create process snapshot\n");
+  }
+
+  if (matchCount > 0 && terminatedCount < matchCount) {
+    printf("Error: Terminated %d of %d matching process(es)\n",
+           terminatedCount, matchCount);
+  }
+
+  return matchCount > 0 && terminatedCount == matchCount;
 }
 
 // 释放进程ID列表
