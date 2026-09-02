@@ -4,7 +4,7 @@ SPCMD是一个功能强大的Windows系统命令行工具，提供了多种系�
 
 ## 版本
 
-**当前版本: 7.7.0.0**
+**当前版本: 7.8.0.0**
 
 ## 功能特性
 
@@ -539,24 +539,33 @@ SOFTWARE.
 
 ## 更新日志
 
-### v7.7.1.0（未发布）
+### v7.8.0.0 (2026-09-02)
 - **安全修复**
   - task：schtasks 参数白名单校验（拒绝引号/管道/重定向等注入字符），修复经提权路径的命令注入漏洞；改用 `_wsystem` 执行，修复中文任务名/路径乱码
+- **新功能**
+  - 全部命令支持 `--h`/`--help` 查看用法（此前 `screenshot --h` 等会直接执行命令）
 - **Bug修复**
   - screenshot：修复宽度非4倍数（如1366x768）截图时颜色逐行错乱（DIB行填充与stb stride不一致）
+  - screenshot：文件名扩展名改为按最后一个扩展名精确匹配（`a.png.bak` 不再被误判）；base64 控制台输出改用 `%TEMP%` 唯一临时文件，不再污染当前目录，失败路径同样清理
+  - screenshot：修复错误路径误删调用方 HBITMAP；补 `GlobalAlloc`/`GlobalLock` 判空
+  - infoboxtop/qboxtop：改用 `MessageBoxW` 显示，修复简繁中文在 GBK/Big5 代码页下乱码
   - notify：修复中文标题/消息乱码（参数按UTF-8解码，误用CP_ACP）
   - process run：修复不带 `--workdir` 时 CreateProcess 必败（空字符串目录，错误码123）
-  - tray/floating：修复多次 `--menu` 仅最后一个生效及内存泄漏
-  - config set：补 `fclose` 返回值检查（v7.7.0.0 声称已修，实际仅覆盖del路径）
+  - tray/floating：修复多次 `--menu` 仅最后一个生效及内存泄漏；格式错误的 `--menu` 现在明确告警；菜单命令执行失败打印错误；窗口改用 `DestroyWindow` 正确销毁
+  - config：ini 节名/键名上限 50→256（长名称不再截断）；写入时去重相邻节头；补 `fclose` 返回值检查（v7.7.0.0 声称已修，实际仅覆盖del路径）；系统目录提权判断增加路径分隔符校验，避免前缀误判触发多余UAC
+  - window：颜色名未知/RGB 格式错误时告警并保留默认色，`--textcolor` 拼写错误不再导致白底白字
+  - get_hwnd_by_exe：进程快照失败时明确报错，不再误报 "No process found"
   - WinMain：修复 CommandLineToArgvW 失败路径 `free()` 字符串字面量导致的堆损坏
   - 未知命令退出码改为1，便于脚本判断
-  - screenshot/config：补 `GlobalAlloc`/`GlobalLock` 判空；错误路径不再误删调用方 HBITMAP
-  - config：系统目录提权判断增加路径分隔符校验，避免前缀误判触发多余UAC
+- **截图可靠性**
+  - 检查 `BitBlt` 返回值，失败时报告 Win32 错误码
+  - Vista+ 启用 `CAPTUREBLT` 包含分层窗口（XP 跳过以避免鼠标闪烁）
+  - 检测全黑画面并输出诊断提示（锁屏/UAC安全桌面/断开RDP/非交互会话），quiet 模式保持静默
 - **代码清理**
   - 移除无调用方的 `srand` 死代码
 - **文档勘误与更新**
   - 勘误：v7.7.0.0 中 UUID v4/v7 相关修复条目对应的 uuid 命令已在后续提交中整体移除，条目仅作存档
-  - README：移除已删除的 time/date 命令文档；新增 `[%...%]` 系统变量替换说明；notify 参数表补充 `--timeout`
+  - README：移除已删除的 time/date 命令文档；新增 `[%...%]` 系统变量替换说明；notify 参数表补充 `--timeout`；补充 `--quality` 缩放行为与 `--encoding` 说明；tray 位置参数兼容用法
   - scripts/spcmd_examples.ps1：移除不存在的 `restart --wait` 参数
   - test.bat：移除 time/date/screen 空转用例
 
