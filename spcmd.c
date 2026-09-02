@@ -40,7 +40,6 @@
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <shobjidl.h>
-#include <wincrypt.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -134,6 +133,7 @@ void cmd_window(int argc, char *argv[]);
 void cmd_notify(int argc, char *argv[]);
 void cmd_config(int argc, char *argv[]);
 int cmd_process(int argc, char *argv[]);
+int cmd_get_hwnd_by_exe(int argc, char *argv[]);
 void cmd_tray(int argc, char *argv[]);
 void cmd_floating(int argc, char *argv[]);
 void cmd_timesync(int argc, char *argv[]);
@@ -158,8 +158,6 @@ BOOL ElevatePrivileges(int argc, char *argv[]);
 BOOL GetStartupPath(BOOL forAllUsers, char *path, int pathSize);
 BOOL GetWindowsVersionSafe(DWORD *major, DWORD *minor);
 char *resolve_system_variables(const char *input);
-void cmd_uuid(int argc, char *argv[]);
-void cmd_snowflake(int argc, char *argv[]);
 void cmd_getenv(int argc, char *argv[]);
 
 // High #5修复：安全的字符串转整数函数声明
@@ -196,12 +194,11 @@ Command command_table[] = {
     {"notify", (void (*)(int, char **))cmd_notify, 0},
     {"config", (void (*)(int, char **))cmd_config, 0},
     {"process", (void (*)(int, char **))cmd_process, 1},
+    {"get_hwnd_by_exe", (void (*)(int, char **))cmd_get_hwnd_by_exe, 1},
     {"tray", (void (*)(int, char **))cmd_tray, 0},
     {"floating", (void (*)(int, char **))cmd_floating, 0},
     {"timesync", (void (*)(int, char **))cmd_timesync, 0},
     {"ipc", (void (*)(int, char **))cmd_ipc, 0},
-    {"uuid", (void (*)(int, char **))cmd_uuid, 0},
-    {"snowflake", (void (*)(int, char **))cmd_snowflake, 0},
     {"getenv", (void (*)(int, char **))cmd_getenv, 0},
     {NULL, NULL, 0}
 };
@@ -277,12 +274,73 @@ static int safe_strtoi(const char *str, int min_val, int max_val, int default_va
 }
 
 //==============================================================================
+// 安全校验辅助函数 - H1修复：防止system()命令注入
+//==============================================================================
+
+// 检查字符串是否包含cmd命令注入危险字符（引号、管道、重定向、环境变量展开、控制字符等）
+static BOOL contains_cmd_metachar(const char *s) {
+  if (!s)
+    return FALSE;
+  for (; *s; s++) {
+    unsigned char c = (unsigned char)*s;
+    if (c == '"' || c == '%' || c == '&' || c == '<' || c == '>' ||
+        c == '|' || c == '^' || c < 0x20) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+// 校验 HH:MM 时间格式（供 schtasks /st 使用）
+static BOOL is_valid_hhmm(const char *s) {
+  if (!s)
+    return FALSE;
+  size_t len = strlen(s);
+  if (len < 3 || len > 5) // H:MM 或 HH:MM
+    return FALSE;
+  int colon = -1;
+  for (size_t i = 0; i < len; i++) {
+    if (s[i] == ':') {
+      if (colon != -1)
+        return FALSE;
+      colon = (int)i;
+    } else if (s[i] < '0' || s[i] > '9') {
+      return FALSE;
+    }
+  }
+  if (colon <= 0 || colon == (int)len - 1)
+    return FALSE;
+  int h = 0, m = 0;
+  for (int i = 0; i < colon; i++)
+    h = h * 10 + (s[i] - '0');
+  for (size_t i = colon + 1; i < len; i++)
+    m = m * 10 + (s[i] - '0');
+  return h <= 23 && m <= 59;
+}
+
+// 校验 YYYY-MM-DD 日期格式（供 schtasks /sd 使用）
+static BOOL is_valid_yyyymmdd(const char *s) {
+  if (!s)
+    return FALSE;
+  if (strlen(s) != 10)
+    return FALSE;
+  for (size_t i = 0; i < 10; i++) {
+    if (i == 4 || i == 7) {
+      if (s[i] != '-')
+        return FALSE;
+    } else if (s[i] < '0' || s[i] > '9') {
+      return FALSE;
+    }
+  }
+  return TRUE;
+}
+
+//==============================================================================
 // 函数实现 - 程序入口
 //==============================================================================
 int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
                    LPSTR _lpCmdLine, int _nCmdShow) {
   // 初始化随机数种子 - 使用time和clock的组合增加熵
-  // 注意: 对于UUID生成,应使用CryptGenRandom代替rand()
   srand((unsigned int)((DWORD_PTR)time(NULL) ^ (DWORD_PTR)clock()));
 
   // 初始化Winsock
@@ -313,7 +371,13 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
       printf("Error: Memory allocation failed\n");
       return 1;
     }
-    argv[0] = (char *)"spcmd.exe";
+    // M3修复：不能free()字符串字面量，必须复制到堆上
+    argv[0] = _strdup("spcmd.exe");
+    if (!argv[0]) {
+      free(argv);
+      printf("Error: Memory allocation failed\n");
+      return 1;
+    }
   } else {
     // 转换宽字符参数为多字节字符（使用UTF-8编码，解决跨地区乱码问题）
     argv = (char **)malloc(argc * sizeof(char *));
@@ -426,6 +490,11 @@ int handle_command(int argc, char *argv[]) {
           int result = cmd_process(argc, resolved_argv);
           if (result != 0) {
             // 注意：在调用exit之前手动释放内存实际上是不必要的
+            return result;
+          }
+        } else if (strcmp(command_name, "get_hwnd_by_exe") == 0) {
+          int result = cmd_get_hwnd_by_exe(argc, resolved_argv);
+          if (result != 0) {
             return result;
           }
         }
@@ -573,7 +642,23 @@ void cmd_screenshot(int argc, char *argv[]) {
         ((bmp.bmWidth * bi.biBitCount + 31) / 32) * 4 * bmp.bmHeight;
 
     HANDLE hDIB = GlobalAlloc(GHND, dwBmpSize);
+    // M4修复：检查GlobalAlloc/GlobalLock返回值
+    if (!hDIB) {
+      printf("Error: Memory allocation failed\n");
+      DeleteObject(hBitmap);
+      DeleteDC(hMemoryDC);
+      ReleaseDC(NULL, hScreenDC);
+      return;
+    }
     char *lpbitmap = (char *)GlobalLock(hDIB);
+    if (!lpbitmap) {
+      printf("Error: Memory allocation failed\n");
+      GlobalFree(hDIB);
+      DeleteObject(hBitmap);
+      DeleteDC(hMemoryDC);
+      ReleaseDC(NULL, hScreenDC);
+      return;
+    }
 
     // 检查GetDIBits的返回值
     int getDIBitsResult =
@@ -1173,6 +1258,20 @@ void cmd_task(int argc, char *argv[]) {
     return;
   }
 
+  // H1修复：校验将嵌入schtasks命令的参数，拒绝命令注入危险字符与非法格式
+  if (contains_cmd_metachar(taskName) || contains_cmd_metachar(programPath)) {
+    printf("Error: Invalid characters in --name or --exec (quote, percent, ampersand, pipe, redirect and control characters are not allowed)\n");
+    return;
+  }
+  if (!is_valid_hhmm(startTime)) {
+    printf("Error: Invalid --starttime, expected HH:MM format (e.g. 09:00)\n");
+    return;
+  }
+  if (!is_valid_yyyymmdd(startDate)) {
+    printf("Error: Invalid --startdate, expected YYYY-MM-DD format (e.g. 2026-01-01)\n");
+    return;
+  }
+
   // 尝试创建任务通常需要管理员权限
   BOOL needAdmin = TRUE;
 
@@ -1258,8 +1357,25 @@ void cmd_task(int argc, char *argv[]) {
 
   printf("Executing command: %s\n", command);
 
-  // 执行命令
-  int result = system(command);
+  // H1修复：参数已通过白名单校验，注入风险已消除
+  // H4修复：命令行参数为UTF-8编码，转换为宽字符后用_wsystem执行，
+  //         避免GBK控制台下中文任务名/路径乱码
+  int result;
+  {
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, command, -1, NULL, 0);
+    if (wlen <= 0) {
+      printf("Error: Failed to convert command to Unicode\n");
+      return;
+    }
+    wchar_t *wcommand = (wchar_t *)malloc(wlen * sizeof(wchar_t));
+    if (!wcommand) {
+      printf("Error: Memory allocation failed\n");
+      return;
+    }
+    MultiByteToWideChar(CP_UTF8, 0, command, -1, wcommand, wlen);
+    result = _wsystem(wcommand);
+    free(wcommand);
+  }
   if (result == 0) {
     printf("Task '%s' created successfully\n", taskName);
   } else {
@@ -1640,8 +1756,16 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
     if (!quiet) {
       printf("Error: Invalid bitmap dimensions\n");
     }
-    DeleteObject(hBitmapToSave);
-    DeleteDC(hMemoryDC);
+    // M2修复：只清理本函数创建的资源，不删除调用方的hBitmap
+    if (hMemoryDC) {
+      if (hOldBitmap) {
+        SelectObject(hMemoryDC, hOldBitmap);
+      }
+      if (hScaledBitmap) {
+        DeleteObject(hScaledBitmap);
+      }
+      DeleteDC(hMemoryDC);
+    }
     return 0;
   }
   
@@ -1654,15 +1778,55 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
     if (!quiet) {
       printf("Error: Bitmap size too large\n");
     }
-    DeleteObject(hBitmapToSave);
-    DeleteDC(hMemoryDC);
+    // M2修复：只清理本函数创建的资源，不删除调用方的hBitmap
+    if (hMemoryDC) {
+      if (hOldBitmap) {
+        SelectObject(hMemoryDC, hOldBitmap);
+      }
+      if (hScaledBitmap) {
+        DeleteObject(hScaledBitmap);
+      }
+      DeleteDC(hMemoryDC);
+    }
     return 0;
   }
   
   DWORD dwBmpSize = (DWORD)dwBmpSize64;
 
+  // M4修复：检查GlobalAlloc/GlobalLock返回值，防止NULL传入GetDIBits
   HANDLE hDIB = GlobalAlloc(GHND, dwBmpSize);
+  if (!hDIB) {
+    if (!quiet) {
+      printf("Error: Memory allocation failed\n");
+    }
+    if (hMemoryDC) {
+      if (hOldBitmap) {
+        SelectObject(hMemoryDC, hOldBitmap);
+      }
+      if (hScaledBitmap) {
+        DeleteObject(hScaledBitmap);
+      }
+      DeleteDC(hMemoryDC);
+    }
+    return 0;
+  }
   char *lpbitmap = (char *)GlobalLock(hDIB);
+  if (!lpbitmap) {
+    if (!quiet) {
+      printf("Error: Memory allocation failed\n");
+    }
+    GlobalFree(hDIB);
+    if (hMemoryDC) {
+      if (hOldBitmap) {
+        SelectObject(hMemoryDC, hOldBitmap);
+      }
+      if (hScaledBitmap) {
+        DeleteObject(hScaledBitmap);
+      }
+      DeleteDC(hMemoryDC);
+    }
+    return 0;
+  }
 
   // 检查GetDIBits的返回值
   int getDIBitsResult = GetDIBits(hMemoryDC, hBitmapToSave, 0, (UINT)height,
@@ -1690,11 +1854,14 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
     return 0; // 返回错误
   }
 
-  // High #14修复：使用64位计算防止pixelCount溢出
-  unsigned __int64 pixelCount64 = (unsigned __int64)width * (unsigned __int64)height;
-  if (pixelCount64 > 0xFFFFFFFFUL) {
+  // H2修复：DIB的每行按4字节对齐（rowSize），可能与width*3不同（如1366宽度）。
+  // 旧实现把整个缓冲区当作连续像素交换BGR/RGB，并用width*3作为stride读取，
+  // 导致宽度非4倍数时颜色逐行错乱。
+  // 现逐行复制到紧缩缓冲区并同时完成BGR->RGB交换，stbi各格式统一使用该缓冲区。
+  char *packed = (char *)malloc((size_t)((unsigned __int64)width * height * 3));
+  if (!packed) {
     if (!quiet) {
-      printf("Error: Pixel count too large\n");
+      printf("Error: Memory allocation failed\n");
     }
     GlobalUnlock(hDIB);
     GlobalFree(hDIB);
@@ -1709,23 +1876,20 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
     }
     return 0;
   }
-  DWORD pixelCount = (DWORD)pixelCount64;
-  
-  // 调整RGB顺序以修复颜色发黄问题，使用64位计算防止溢出
-  if (pixelCount > 0 && lpbitmap != NULL) {
-    unsigned __int64 pixelDataSize = (unsigned __int64)pixelCount * 3;
-    for (DWORD i = 0; i + 2 < dwBmpSize && (unsigned __int64)i < pixelDataSize; i += 3) {
-      // 交换红色和蓝色通道 (BGR -> RGB)
-      char temp = lpbitmap[i];
-      lpbitmap[i] = lpbitmap[i + 2];
-      lpbitmap[i + 2] = temp;
+  for (int y = 0; y < height; y++) {
+    const char *srcRow = lpbitmap + (size_t)y * rowSize;
+    char *dstRow = packed + (size_t)y * width * 3;
+    for (int x = 0; x < width; x++) {
+      dstRow[x * 3 + 0] = srcRow[x * 3 + 2]; // R (交换BGR->RGB)
+      dstRow[x * 3 + 1] = srcRow[x * 3 + 1]; // G
+      dstRow[x * 3 + 2] = srcRow[x * 3 + 0]; // B
     }
   }
 
-  // 使用stb_image_write保存为指定格式
+  // 使用stb_image_write保存为指定格式（packed缓冲区行宽恰为width*3，无填充）
   int result = 0;
   if (strcmp(format, "png") == 0 || strcmp(format, "PNG") == 0) {
-    result = stbi_write_png(filename, width, height, 3, lpbitmap, width * 3);
+    result = stbi_write_png(filename, width, height, 3, packed, width * 3);
     if (result) {
       if (!quiet) {
         if (width != bmp.bmWidth || height != bmp.bmHeight) {
@@ -1738,7 +1902,7 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
     }
   } else if (strcmp(format, "jpg") == 0 || strcmp(format, "JPG") == 0 ||
              strcmp(format, "jpeg") == 0 || strcmp(format, "JPEG") == 0) {
-    result = stbi_write_jpg(filename, width, height, 3, lpbitmap, quality);
+    result = stbi_write_jpg(filename, width, height, 3, packed, quality);
     if (result) {
       if (!quiet) {
         if (width != bmp.bmWidth || height != bmp.bmHeight) {
@@ -1750,7 +1914,7 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
       }
     }
   } else { // 默认保存为BMP格式
-    result = stbi_write_bmp(filename, width, height, 3, lpbitmap);
+    result = stbi_write_bmp(filename, width, height, 3, packed);
     if (result) {
       if (!quiet) {
         if (width != bmp.bmWidth || height != bmp.bmHeight) {
@@ -1768,6 +1932,7 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
   }
 
   // Clean up resources
+  free(packed);
   GlobalUnlock(hDIB);
   GlobalFree(hDIB);
 
@@ -2062,6 +2227,35 @@ BOOL CALLBACK EnumWindowsProcEnable(HWND hwnd, LPARAM lParam) {
   (void)lParam; // 防止未使用参数警告
   EnableWindow(hwnd, TRUE);
   return TRUE;
+}
+
+// 根据可执行文件名获取窗口句柄的枚举回调数据结构
+typedef struct {
+  ProcessIdList *pidList;
+  int matchCount;
+} GetHWNDData;
+
+// 枚举窗口回调 - 匹配 PID 并打印 HWND
+BOOL CALLBACK EnumWindowsProcGetHWND(HWND hwnd, LPARAM lParam) {
+  GetHWNDData *data = (GetHWNDData *)lParam;
+  DWORD windowPID = 0;
+
+  GetWindowThreadProcessId(hwnd, &windowPID);
+
+  if (windowPID > 0) {
+    // 检查此窗口的 PID 是否与目标进程列表中的 PID 匹配
+    for (int i = 0; i < data->pidList->count; i++) {
+      if (data->pidList->pids[i] == windowPID) {
+        if (IsWindowVisible(hwnd)) {
+          printf("0x%08lX\n", (DWORD_PTR)hwnd);
+          data->matchCount++;
+        }
+        break; // 每个窗口最多一个匹配的 PID
+      }
+    }
+  }
+
+  return TRUE; // 继续枚举
 }
 
 // 根据颜色名称获取RGB值
@@ -2894,8 +3088,9 @@ void cmd_notify(int argc, char *argv[]) {
                       dwMinorVersion == 1); // Windows XP是5.1版本
 
   // 为Unicode转换分配内存
-  int title_len = MultiByteToWideChar(CP_ACP, 0, title, -1, NULL, 0);
-  int message_len = MultiByteToWideChar(CP_ACP, 0, message, -1, NULL, 0);
+  // H4修复：WinMain已将参数转为UTF-8，此处必须用CP_UTF8解码（CP_ACP在GBK系统上会乱码）
+  int title_len = MultiByteToWideChar(CP_UTF8, 0, title, -1, NULL, 0);
+  int message_len = MultiByteToWideChar(CP_UTF8, 0, message, -1, NULL, 0);
 
   // 检查转换是否成功
   if (title_len <= 0 || message_len <= 0) {
@@ -2917,8 +3112,8 @@ void cmd_notify(int argc, char *argv[]) {
   }
 
   // 转换为宽字符
-  MultiByteToWideChar(CP_ACP, 0, title, -1, wtitle, title_len);
-  MultiByteToWideChar(CP_ACP, 0, message, -1, wmessage, message_len);
+  MultiByteToWideChar(CP_UTF8, 0, title, -1, wtitle, title_len);
+  MultiByteToWideChar(CP_UTF8, 0, message, -1, wmessage, message_len);
 
   if (isWindowsXP) {
     // Windows XP兼容实现 - 使用MessageBox
@@ -3460,8 +3655,9 @@ int cmd_process(int argc, char *argv[]) {
     ZeroMemory(&pi, sizeof(pi));
 
     // Start the application
+    // H3修复：--workdir未指定时必须传NULL（空字符串是非法目录，导致启动必败）
     if (CreateProcessA(NULL, commandLine, NULL, NULL, FALSE, 0, NULL,
-                       workingFolder, &si, &pi)) {
+                       strlen(workingFolder) > 0 ? workingFolder : NULL, &si, &pi)) {
       printf("Application '%s' started successfully in folder '%s'\n",
              commandLine, workingFolder);
       CloseHandle(pi.hProcess);
@@ -3733,171 +3929,6 @@ void free_pid_list(ProcessIdList *pidList) {
   }
 }
 
-// 获取系统时间戳（毫秒）
-uint64_t get_current_timestamp_ms() {
-  FILETIME ft;
-  GetSystemTimeAsFileTime(&ft);
-  uint64_t timestamp = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
-  // 转换为Unix时间戳（毫秒）
-  timestamp /= 10000;             // 100-nanosecond intervals to milliseconds
-  timestamp -= 11644473600000ULL; // 转换为Unix时间戳（从1970年1月1日开始）
-  return timestamp;
-}
-
-// 获取加密安全的随机字节
-static BOOL get_secure_random_bytes(BYTE *buffer, DWORD length) {
-  HCRYPTPROV hCryptProv;
-  BOOL result = CryptAcquireContext(&hCryptProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT);
-  if (!result) {
-    // 如果加密上下文获取失败，回退到rand()
-    for (DWORD i = 0; i < length; i++) {
-      buffer[i] = (BYTE)(rand() & 0xFF);
-    }
-    return FALSE;
-  }
-
-  result = CryptGenRandom(hCryptProv, length, buffer);
-  CryptReleaseContext(hCryptProv, 0);
-  return result;
-}
-
-// 生成UUID v4
-void generate_uuid_v4(char *uuid_str) {
-  // 使用加密安全的随机数生成器
-  BYTE random_bytes[16];
-  if (!get_secure_random_bytes(random_bytes, 16)) {
-    for (int i = 0; i < 16; i++) {
-      random_bytes[i] = (BYTE)(rand() & 0xFF);
-    }
-  }
-
-  // 设置UUID版本（第13位为0100，表示v4）
-  random_bytes[6] = (random_bytes[6] & 0x0F) | 0x40;
-  // 设置变体（第17位为10）
-  random_bytes[8] = (random_bytes[8] & 0x3F) | 0x80;
-
-  // 格式化为UUID字符串
-  snprintf(uuid_str, 37,
-           "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-           random_bytes[0], random_bytes[1], random_bytes[2], random_bytes[3],
-           random_bytes[4], random_bytes[5],
-           random_bytes[6], random_bytes[7],
-           random_bytes[8], random_bytes[9],
-           random_bytes[10], random_bytes[11], random_bytes[12], random_bytes[13], random_bytes[14], random_bytes[15]);
-}
-
-// 生成UUID v7
-void generate_uuid_v7(char *uuid_str) {
-  uint64_t timestamp = get_current_timestamp_ms();
-
-  BYTE random_bytes[10];
-  if (!get_secure_random_bytes(random_bytes, 10)) {
-    for (int i = 0; i < 10; i++) {
-      random_bytes[i] = (BYTE)(rand() & 0xFF);
-    }
-  }
-
-  BYTE uuid_bytes[16];
-
-  // bytes 0-5 (48 bits): timestamp (big-endian)
-  uuid_bytes[0] = (BYTE)((timestamp >> 40) & 0xFF);
-  uuid_bytes[1] = (BYTE)((timestamp >> 32) & 0xFF);
-  uuid_bytes[2] = (BYTE)((timestamp >> 24) & 0xFF);
-  uuid_bytes[3] = (BYTE)((timestamp >> 16) & 0xFF);
-  uuid_bytes[4] = (BYTE)((timestamp >> 8) & 0xFF);
-  uuid_bytes[5] = (BYTE)(timestamp & 0xFF);
-
-  // byte 6: version (4 bits = 0x7) | random (4 bits)
-  uuid_bytes[6] = 0x70 | (random_bytes[0] & 0x0F);
-
-  // byte 7: random (8 bits)
-  uuid_bytes[7] = random_bytes[1];
-
-  // byte 8: variant (2 bits = 0x2) | random (6 bits)
-  uuid_bytes[8] = 0x80 | (random_bytes[2] & 0x3F);
-
-  // bytes 9-15: random (56 bits)
-  uuid_bytes[9] = random_bytes[3];
-  uuid_bytes[10] = random_bytes[4];
-  uuid_bytes[11] = random_bytes[5];
-  uuid_bytes[12] = random_bytes[6];
-  uuid_bytes[13] = random_bytes[7];
-  uuid_bytes[14] = random_bytes[8];
-  uuid_bytes[15] = random_bytes[9];
-
-  snprintf(uuid_str, 37,
-           "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-           uuid_bytes[0], uuid_bytes[1], uuid_bytes[2], uuid_bytes[3],
-           uuid_bytes[4], uuid_bytes[5],
-           uuid_bytes[6], uuid_bytes[7],
-           uuid_bytes[8], uuid_bytes[9],
-           uuid_bytes[10], uuid_bytes[11], uuid_bytes[12], uuid_bytes[13], uuid_bytes[14], uuid_bytes[15]);
-}
-
-// 雪花ID生成器结构
-typedef struct {
-  uint64_t last_timestamp;
-  uint64_t node_id;  // 节点ID（这里简化为固定值）
-  uint64_t sequence; // 序列号
-} snowflake_generator;
-
-// 初始化雪花ID生成器
-snowflake_generator init_snowflake() {
-  snowflake_generator sf;
-  sf.last_timestamp = 0;
-  sf.node_id = 1; // 固定节点ID
-  sf.sequence = 0;
-  return sf;
-}
-
-// 生成雪花ID
-uint64_t generate_snowflake_id(snowflake_generator *sf) {
-  uint64_t timestamp = get_current_timestamp_ms();
-
-  // 如果时钟回拨，使用更严格的处理
-  if (timestamp < sf->last_timestamp) {
-    // 等待时钟赶上，最多等待100毫秒
-    uint64_t wait_count = 0;
-    while (timestamp < sf->last_timestamp) {
-      Sleep(1); // 等待1毫秒
-      timestamp = get_current_timestamp_ms();
-      wait_count++;
-
-      // 如果等待超过100毫秒，使用当前时间戳并增加序列号
-      if (wait_count > 100) {
-        timestamp = sf->last_timestamp;
-        break;
-      }
-    }
-  }
-
-  // 如果同一毫秒内，序列号递增
-  if (timestamp == sf->last_timestamp) {
-    sf->sequence = (sf->sequence + 1) & 0xFFF; // 12位序列号
-    if (sf->sequence == 0) {
-      uint64_t wait_count = 0;
-      while (timestamp <= sf->last_timestamp) {
-        Sleep(1);
-        timestamp = get_current_timestamp_ms();
-        wait_count++;
-        if (wait_count > 1000) {
-          timestamp = sf->last_timestamp + 1;
-          break;
-        }
-      }
-    }
-  } else {
-    sf->sequence = 0;
-  }
-
-  sf->last_timestamp = timestamp;
-
-  // 组装雪花ID
-  // 时间戳（42位）+ 节点ID（10位）+ 序列号（12位）
-  uint64_t id = (timestamp << 22) | (sf->node_id << 12) | sf->sequence;
-  return id;
-}
-
 // 托盘图标相关的常量定义
 #define WM_TRAYICON (WM_USER + 1)
 #define ID_TRAY_APP_ICON 1001
@@ -3909,6 +3940,57 @@ typedef struct {
   char name[128];    // 菜单项名称
   char command[256]; // 菜单项对应的命令
 } MenuCommand;
+
+// M1修复：直接遍历argv解析--menu参数，支持多次出现
+// （旧实现经参数框架解析，同名参数被覆盖，多次--menu只保留最后一个且有内存泄漏）
+static void parse_menu_args(int argc, char *argv[], MenuCommand **out_commands,
+                            int *out_count) {
+  *out_commands = NULL;
+  *out_count = 0;
+
+  // 统计合法的--menu出现次数（必须包含逗号分隔的name,command）
+  int count = 0;
+  for (int i = 2; i < argc; i++) {
+    if (strncmp(argv[i], "--menu=", 7) == 0 &&
+        strchr(argv[i] + 7, ',') != NULL) {
+      count++;
+    }
+  }
+  if (count <= 0)
+    return;
+
+  MenuCommand *menus = (MenuCommand *)malloc(sizeof(MenuCommand) * count);
+  if (!menus)
+    return;
+
+  int current_index = 0;
+  for (int i = 2; i < argc && current_index < count; i++) {
+    if (strncmp(argv[i], "--menu=", 7) != 0)
+      continue;
+    char *menu_value = argv[i] + 7;
+    char *comma_pos = strchr(menu_value, ',');
+    if (!comma_pos)
+      continue;
+    // 分离菜单项名称和命令
+    size_t name_len = (size_t)(comma_pos - menu_value);
+    if (name_len > sizeof(menus[current_index].name) - 1)
+      name_len = sizeof(menus[current_index].name) - 1;
+    strncpy(menus[current_index].name, menu_value, name_len);
+    menus[current_index].name[name_len] = '\0';
+    strncpy(menus[current_index].command, comma_pos + 1,
+            sizeof(menus[current_index].command) - 1);
+    menus[current_index]
+        .command[sizeof(menus[current_index].command) - 1] = '\0';
+    current_index++;
+  }
+
+  if (current_index == 0) {
+    free(menus);
+    return;
+  }
+  *out_commands = menus;
+  *out_count = current_index;
+}
 
 // 托盘图标数据结构
 typedef struct {
@@ -4514,66 +4596,19 @@ void cmd_tray(int argc, char *argv[]) {
   }
 
   // 处理menu参数
+  // M1修复：直接解析argv，支持多次--menu
   MenuCommand *menu_commands = NULL;
   int menu_command_count = 0;
-
-  // 使用新的参数解析框架处理menu参数
-  ParamDefinition param_defs[] = {
-      {"menu", NULL, FALSE, TRUE} // 菜单命令，支持多个，格式：name,command
-  };
-
-  ParamContext *context = create_param_context(param_defs, 1);
-  if (context) {
-    // 解析参数
-    parse_parameters(context, argc, argv, 2);
-
-    // 获取所有menu参数值
-    for (int i = 0; i < context->param_count; i++) {
-      if (strcmp(context->params[i].name, "menu") == 0 &&
-          context->params[i].value) {
-        menu_command_count++;
-      }
-    }
-
-    if (menu_command_count > 0) {
-      menu_commands =
-          (MenuCommand *)malloc(sizeof(MenuCommand) * menu_command_count);
-      if (menu_commands) {
-        // 解析menu参数
-        int current_index = 0;
-        for (int i = 0; i < context->param_count; i++) {
-          if (strcmp(context->params[i].name, "menu") == 0 &&
-              context->params[i].value) {
-            char *menu_value = context->params[i].value;
-            char *comma_pos = strchr(menu_value, ',');
-            if (comma_pos) {
-              // 分离菜单项名称和命令
-              *comma_pos = '\0';
-              strncpy(menu_commands[current_index].name, menu_value,
-                      sizeof(menu_commands[current_index].name) - 1);
-              menu_commands[current_index]
-                  .name[sizeof(menu_commands[current_index].name) - 1] = '\0';
-              strncpy(menu_commands[current_index].command, comma_pos + 1,
-                      sizeof(menu_commands[current_index].command) - 1);
-              menu_commands[current_index]
-                  .command[sizeof(menu_commands[current_index].command) - 1] =
-                  '\0';
-              current_index++;
-            }
-          }
-        }
-      }
-    }
-
-    // 释放参数上下文
-    free_param_context(context);
-  }
+  parse_menu_args(argc, argv, &menu_commands, &menu_command_count);
 
   // 检查进程是否正在运行
   if (!is_process_running(process_name)) {
     printf("Process '%s' is not running. Tray icon will not be displayed.\n",
            process_name);
     printf("Tray icon terminated.\n");
+    if (menu_commands) {
+      free(menu_commands);
+    }
     return;
   }
 
@@ -4801,49 +4836,10 @@ void cmd_floating(int argc, char *argv[]) {
   }
 
   // 处理menu参数
+  // M1修复：直接解析argv，支持多次--menu
   MenuCommand *menu_commands = NULL;
   int menu_command_count = 0;
-
-  // 获取所有menu参数值
-  for (int i = 0; i < context->param_count; i++) {
-    if (strcmp(context->params[i].name, "menu") == 0 &&
-        context->params[i].value) {
-      menu_command_count++;
-    }
-  }
-
-  if (menu_command_count > 0) {
-    menu_commands =
-        (MenuCommand *)malloc(sizeof(MenuCommand) * menu_command_count);
-    if (!menu_commands) {
-      printf("Error: Memory allocation failed for menu commands\n");
-      free_param_context(context);
-      return;
-    }
-
-    // 解析menu参数
-    int current_index = 0;
-    for (int i = 0; i < context->param_count; i++) {
-      if (strcmp(context->params[i].name, "menu") == 0 &&
-          context->params[i].value) {
-        char *menu_value = context->params[i].value;
-        char *comma_pos = strchr(menu_value, ',');
-        if (comma_pos) {
-          // 分离菜单项名称和命令
-          *comma_pos = '\0';
-          strncpy(menu_commands[current_index].name, menu_value,
-                  sizeof(menu_commands[current_index].name) - 1);
-          menu_commands[current_index]
-              .name[sizeof(menu_commands[current_index].name) - 1] = '\0';
-          strncpy(menu_commands[current_index].command, comma_pos + 1,
-                  sizeof(menu_commands[current_index].command) - 1);
-          menu_commands[current_index]
-              .command[sizeof(menu_commands[current_index].command) - 1] = '\0';
-          current_index++;
-        }
-      }
-    }
-  }
+  parse_menu_args(argc, argv, &menu_commands, &menu_command_count);
 
   // 释放参数上下文
   free_param_context(context);
@@ -5273,67 +5269,6 @@ void cmd_timesync(int argc, char *argv[]) {
 }
 
 //==============================================================================
-// 命令实现 - UUID生成
-//==============================================================================
-void cmd_uuid(int argc, char *argv[]) {
-  int version = 4; // 默认UUID v4
-
-  for (int i = 2; i < argc; i++) {
-    if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "--h") == 0) {
-      printf("UUID generation command usage:\n\n");
-      printf("  spcmd uuid          - Generate UUID v4 (random)\n");
-      printf("  spcmd uuid 4         - Generate UUID v4 (random)\n");
-      printf("  spcmd uuid 7         - Generate UUID v7 (timestamp-based)\n\n");
-      printf("Examples:\n");
-      printf("  spcmd uuid\n");
-      printf("  spcmd uuid 4\n");
-      printf("  spcmd uuid 7\n");
-      return;
-    } else if (argv[i][0] != '-') {
-      int parsedVersion = safe_strtoi(argv[i], INT_MIN, INT_MAX, INT_MIN);
-      if (parsedVersion == INT_MIN) {
-        // Parsing failed (invalid number)
-        printf("Error: Invalid UUID version '%s'. Use 4 or 7.\n", argv[i]);
-        return;
-      }
-      version = parsedVersion;
-      if (version != 4 && version != 7) {
-        printf("Error: Unsupported UUID version %d. Use 4 or 7.\n", version);
-        return;
-      }
-    }
-  }
-
-  char uuid_str[37];
-  if (version == 7) {
-    generate_uuid_v7(uuid_str);
-  } else {
-    generate_uuid_v4(uuid_str);
-  }
-  printf("%s\n", uuid_str);
-}
-
-//==============================================================================
-// 命令实现 - Snowflake ID生成
-//==============================================================================
-void cmd_snowflake(int argc, char *argv[]) {
-  if (argc > 2 && (strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "--h") == 0)) {
-    printf("Snowflake ID generation command usage:\n\n");
-    printf("  spcmd snowflake  - Generate a unique Snowflake ID\n\n");
-    printf("Snowflake ID is a 64-bit unique identifier composed of:\n");
-    printf("  - Timestamp (42 bits)\n");
-    printf("  - Node ID (10 bits)\n");
-    printf("  - Sequence (12 bits)\n\n");
-    printf("Example:\n");
-    printf("  spcmd snowflake\n");
-    return;
-  }
-
-  snowflake_generator sf = init_snowflake();
-  uint64_t id = generate_snowflake_id(&sf);
-  printf("%I64u\n", id);
-}
-
 //==============================================================================
 // 命令实现 - 获取环境变量
 //==============================================================================
@@ -5355,4 +5290,47 @@ void cmd_getenv(int argc, char *argv[]) {
   } else {
     printf("Error: Environment variable '%s' not found\n", var_name);
   }
+}
+
+//==============================================================================
+// 命令实现 - 根据可执行文件名获取窗口句柄
+//==============================================================================
+int cmd_get_hwnd_by_exe(int argc, char *argv[]) {
+  if (argc < 3 || strcmp(argv[2], "--help") == 0 ||
+      strcmp(argv[2], "--h") == 0) {
+    printf("Get window handle by executable name usage:\n\n");
+    printf("  spcmd get_hwnd_by_exe <exe_name>\n\n");
+    printf("Examples:\n");
+    printf("  spcmd get_hwnd_by_exe notepad.exe\n");
+    return 0;
+  }
+
+  const char *exeName = argv[2];
+
+  ProcessIdList *pidList = get_pids_by_exe_name(exeName);
+  if (!pidList) {
+    printf("Error: Failed to get process list\n");
+    return 1;
+  }
+
+  if (pidList->count == 0) {
+    printf("No process found with name '%s'\n", exeName);
+    free_pid_list(pidList);
+    return 1;
+  }
+
+  GetHWNDData data;
+  data.pidList = pidList;
+  data.matchCount = 0;
+
+  EnumWindows(EnumWindowsProcGetHWND, (LPARAM)&data);
+
+  free_pid_list(pidList);
+
+  if (data.matchCount == 0) {
+    printf("No visible windows found for process '%s'\n", exeName);
+    return 1;
+  }
+
+  return 0;
 }

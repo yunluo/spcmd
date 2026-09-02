@@ -28,9 +28,8 @@ SPCMD是一个功能强大的Windows系统命令行工具，提供了多种系�
 | `tray` / `floating` | 无（默认监控 python.exe） | <code>--process</code>, <code>--title</code>, <code>--icon</code>, <code>--path</code>, <code>--menu="name,command"</code> | `--menu` 可重复；若提供 <code>--path</code> 则从路径提取图标/名称 |
 | `timesync` | 无 | <code>--server=ntp_server</code> | NTP时间同步，需要管理员权限 |
 | `ipc` | <code>--port</code>, <code>--value</code> | <code>--host</code> | TCP Socket发送数据 |
-| `uuid` | 无 | <code>4</code> 或 <code>7</code>（位置参数） | 生成UUID v4（随机）或v7（时间戳） |
-| `snowflake` | 无 | 无 | 生成64位雪花ID |
 | `getenv` | <code>环境变量名</code>（位置参数） | 无 | 获取环境变量值 |
+| `get_hwnd_by_exe` | `<exe_name>`（位置参数） | 无 | 输出匹配的窗口句柄（十六进制），找到返回 0，未找到返回 1 |
 
 ---
 
@@ -50,8 +49,6 @@ SPCMD是一个功能强大的Windows系统命令行工具，提供了多种系�
 - **浮动图标**: 创建浮动图标监控进程
 - **时间同步**: 通过NTP同步系统时间
 - **TCP通信**: 通过TCP Socket发送数据
-- **UUID生成**: 生成UUID v4（随机）和v7（时间戳）
-- **雪花ID生成**: 生成64位分布式唯一ID
 - **环境变量**: 获取环境变量值
 - **时间日期**: 获取当前系统时间和日期
 
@@ -393,33 +390,7 @@ spcmd ipc --host=127.0.0.1 --port=9999 --value=hello
 spcmd ipc --host=192.168.1.100 --port=8080 --value=test
 ```
 
-#### UUID生成
-```bash
-spcmd uuid [4|7]
-```
 
-参数说明:
-- 无参数或 `4` - 生成UUID v4（基于随机数）
-- `7` - 生成UUID v7（基于时间戳）
-
-示例:
-```bash
-spcmd uuid        # 生成UUID v4
-spcmd uuid 4      # 生成UUID v4
-spcmd uuid 7      # 生成UUID v7
-```
-
-#### 雪花ID生成
-```bash
-spcmd snowflake
-```
-
-生成64位分布式唯一ID（时间戳+节点ID+序列号）
-
-示例:
-```bash
-spcmd snowflake
-```
 
 #### 获取环境变量
 ```bash
@@ -435,6 +406,31 @@ spcmd getenv PATH
 spcmd getenv WINDIR
 spcmd getenv USERNAME
 ```
+
+#### 根据可执行文件名获取窗口句柄
+```bash
+spcmd get_hwnd_by_exe <exe_name>
+```
+
+参数说明:
+- `<exe_name>` - 要查找的可执行文件名（例如 notepad.exe, explorer.exe）
+
+示例:
+```bash
+# 获取记事本窗口句柄
+spcmd get_hwnd_by_exe notepad.exe
+
+# 获取资源管理器窗口句柄
+spcmd get_hwnd_by_exe explorer.exe
+
+# 获取帮助
+spcmd get_hwnd_by_exe --help
+```
+
+备注：
+- 命令枚举所有匹配进程的顶级可见窗口
+- 输出格式为 0xXXXXXXXX 的十六进制值
+- 找到任何窗口则退出码为 0，否则为 1
 
 #### 获取当前时间
 ```bash
@@ -499,12 +495,6 @@ spcmd timesync --server=time.windows.com
 # TCP通信
 spcmd ipc --host=127.0.0.1 --port=9999 --value=hello
 
-# 生成UUID
-spcmd uuid
-spcmd uuid 7
-
-# 生成雪花ID
-spcmd snowflake
 
 # 获取环境变量
 spcmd getenv PATH

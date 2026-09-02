@@ -263,23 +263,7 @@ call :test_output "spcmd.exe process --pid=%random%" "process info by PID"
 call :test_help "spcmd.exe process --kill=notepad.exe" "process kill command"
 
 echo ============================================
-echo 5. UUID/ID Generation Tests
-echo ============================================
-echo.
-
-call :test_output "spcmd.exe uuid" "generate default UUID"
-call :test_output "spcmd.exe uuid 4" "generate UUID v4"
-call :test_output "spcmd.exe uuid 7" "generate UUID v7"
-
-echo ============================================
-echo 6. Snowflake ID Tests
-echo ============================================
-echo.
-
-call :test_output "spcmd.exe snowflake" "generate Snowflake ID"
-
-echo ============================================
-echo 7. Environment Variable Tests
+echo 5. Environment Variable Tests
 echo ============================================
 echo.
 
@@ -287,7 +271,7 @@ call :test_output "spcmd.exe getenv PATH" "get PATH environment variable"
 call :test_output "spcmd.exe getenv WINDIR" "get WINDIR environment variable"
 
 echo ============================================
-echo 8. Time/Date Tests
+echo 6. Time/Date Tests
 echo ============================================
 echo.
 
@@ -295,14 +279,14 @@ call :test_output "spcmd.exe time" "get current time"
 call :test_output "spcmd.exe date" "get current date"
 
 echo ============================================
-echo 9. Screen/Display Tests
+echo 7. Screen/Display Tests
 echo ============================================
 echo.
 
 call :test_output "spcmd.exe screen" "get screen resolution"
 
 echo ============================================
-echo 10. GUI Commands (Manual Verification Needed)
+echo 8. GUI Commands (Manual Verification Needed)
 echo ============================================
 echo.
 
@@ -312,7 +296,15 @@ call :test_gui "spcmd.exe qboxtop --message=Do you see this?" "qboxtop question 
 call :test_gui "spcmd.exe notify --title=SPCMD --message=Test Notification" "desktop notification" "Should show system notification"
 
 echo ============================================
-echo 11. Admin/System Commands (Requires Permissions)
+echo 9. Get HWND by EXE Tests
+echo ============================================
+echo.
+
+call :test_output "spcmd.exe get_hwnd_by_exe explorer.exe" "get HWNDs for explorer.exe"
+call :test_output "spcmd.exe get_hwnd_by_exe nonexistent_xyz.exe" "get HWNDs for nonexistent exe"
+
+echo ============================================
+echo 10. Admin/System Commands (Requires Permissions)
 echo ============================================
 echo.
 
