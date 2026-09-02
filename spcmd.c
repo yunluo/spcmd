@@ -340,8 +340,7 @@ static BOOL is_valid_yyyymmdd(const char *s) {
 //==============================================================================
 int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
                    LPSTR _lpCmdLine, int _nCmdShow) {
-  // 初始化随机数种子 - 使用time和clock的组合增加熵
-  srand((unsigned int)((DWORD_PTR)time(NULL) ^ (DWORD_PTR)clock()));
+  // L5修复：移除srand死代码（uuid命令删除后已无rand()调用方）
 
   // 初始化Winsock
   WSADATA wsaData;
@@ -521,7 +520,8 @@ int handle_command(int argc, char *argv[]) {
   }
   free(resolved_argv);
 
-  return 0;
+  // L2修复：未知命令返回非零退出码，便于脚本判断
+  return command_found ? 0 : 1;
 }
 
 void cmd_screenshot(int argc, char *argv[]) {
@@ -3397,9 +3397,12 @@ void cmd_config(int argc, char *argv[]) {
     }
 
     // 检查是否需要管理员权限（写入系统配置）
+    // L3修复：要求目录分隔符，避免"C:\Windows\System32xxx"前缀误判触发多余UAC
     char systemDir[MAX_PATH];
     if (GetSystemDirectoryA(systemDir, MAX_PATH) > 0) {
-      if (strncmp(filePath, systemDir, strlen(systemDir)) == 0) {
+      size_t sysDirLen = strlen(systemDir);
+      if (strncmp(filePath, systemDir, sysDirLen) == 0 &&
+          filePath[sysDirLen] == '\\') {
         // 目标是系统目录，需要管理员权限
         // 检查是否已经尝试过提权（防止无限循环）
         BOOL alreadyElevated = FALSE;
@@ -3482,8 +3485,12 @@ void cmd_config(int argc, char *argv[]) {
         }
         write_entry = write_entry->next;
       }
-      fclose(file);
-      printf("Configuration saved successfully\n");
+      // L1修复：set路径同样检查fclose返回值（与del路径保持一致）
+      if (fclose(file) == 0) {
+        printf("Configuration saved successfully\n");
+      } else {
+        printf("Error: Failed to save configuration\n");
+      }
     } else {
       printf("Error: Unable to write to file %s\n", filePath);
     }
@@ -3498,9 +3505,12 @@ void cmd_config(int argc, char *argv[]) {
     }
 
     // 检查是否需要管理员权限（删除系统配置）
+    // L3修复：要求目录分隔符，避免"C:\Windows\System32xxx"前缀误判触发多余UAC
     char systemDir2[MAX_PATH];
     if (GetSystemDirectoryA(systemDir2, MAX_PATH) > 0) {
-      if (strncmp(filePath, systemDir2, strlen(systemDir2)) == 0) {
+      size_t sysDirLen2 = strlen(systemDir2);
+      if (strncmp(filePath, systemDir2, sysDirLen2) == 0 &&
+          filePath[sysDirLen2] == '\\') {
         // 目标是系统目录，需要管理员权限
         // 检查是否已经尝试过提权（防止无限循环）
         BOOL alreadyElevated = FALSE;

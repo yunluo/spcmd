@@ -55,7 +55,7 @@ Write-Host "process kill -> exit:$LASTEXITCODE"
 Write-Host "task create -> exit:$LASTEXITCODE"
 
 # 9) 重启进程
-& $spcmd restart --path="C:\Windows\notepad.exe" --wait=5
+& $spcmd restart --path="C:\Windows\notepad.exe"
 Write-Host "restart -> exit:$LASTEXITCODE"
 
 # 10) 通知

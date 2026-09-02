@@ -23,7 +23,7 @@ SPCMD是一个功能强大的Windows系统命令行工具，提供了多种系�
 | `process` | 视 <code>--action</code> 而定（<code>run</code> 需 <code>--exec</code>; <code>check</code>/<code>kill</code> 可用 <code>--name</code> 或 <code>--pid</code>；<code>check</code> 额外支持 <code>--keyword</code>） | <code>--action=run&#124;check&#124;kill</code>, <code>--exec</code>, <code>--name</code>, <code>--keyword</code>, <code>--pid</code>, <code>--workdir</code> | `check` 找到返回退出码 0，未找到返回 1；`--keyword` 仅用于 check，不支持 kill |
 | `task` | <code>--name</code>, <code>--exec</code>（创建） | <code>--trigger=daily&#124;weekly&#124;monthly</code>, <code>--starttime=HH:MM</code>, <code>--startdate=YYYY-MM-DD</code>, <code>--remove</code> | `--remove` 删除任务 |
 | `restart` | <code>--path</code> | <code>--workdir</code> | 重启指定进程 |
-| `notify` | <code>--title</code>, <code>--message</code> | <code>--icon=info&#124;warning&#124;error</code> | 系统通知 |
+| `notify` | <code>--title</code>, <code>--message</code> | <code>--icon=info&#124;warning&#124;error</code>, <code>--timeout=1-60</code> | 系统通知 |
 | `config` | <code>--file</code> | <code>--action=get&#124;set&#124;del</code>, <code>--section</code>, <code>--key</code>, <code>--value</code> | 示例：`spcmd config --file=app.ini --action=set --section=User --key=Name --value=Alice` |
 | `tray` / `floating` | 无（默认监控 python.exe） | <code>--process</code>, <code>--title</code>, <code>--icon</code>, <code>--path</code>, <code>--menu="name,command"</code> | `--menu` 可重复；若提供 <code>--path</code> 则从路径提取图标/名称 |
 | `timesync` | 无 | <code>--server=ntp_server</code> | NTP时间同步，需要管理员权限 |
@@ -432,28 +432,27 @@ spcmd get_hwnd_by_exe --help
 - 输出格式为 0xXXXXXXXX 的十六进制值
 - 找到任何窗口则退出码为 0，否则为 1
 
-#### 获取当前时间
-```bash
-spcmd time
-```
+#### 系统变量替换
 
-输出格式: `HH:MM:SS`（24小时制）
+所有命令参数均支持系统变量替换，格式为 `[%变量名%]`，未识别的变量保持原样输出：
 
-示例:
-```bash
-spcmd time
-```
-
-#### 获取当前日期
-```bash
-spcmd date
-```
-
-输出格式: `YYYY-MM-DD`
+| 变量 | 含义 |
+|---|---|
+| `[%folder.desktop%]` | 当前用户桌面目录 |
+| `[%folder.programs%]` | 当前用户"程序"菜单目录 |
+| `[%folder.start_menu%]` | 当前用户开始菜单目录 |
+| `[%folder.startup%]` | 当前用户开机自启目录 |
+| `[%folder.appdata%]` | 当前用户 Application Data 目录 |
+| `[%folder.mydocuments%]` | 当前用户"我的文档"目录 |
+| `[%folder.windows%]` | Windows 目录 |
+| `[%folder.system%]` | System32 目录 |
+| `[%folder.programfiles%]` | Program Files 目录 |
+| `[%sys.环境变量名%]` | 任意环境变量的值，如 `[%sys.TEMP%]` |
 
 示例:
 ```bash
-spcmd date
+spcmd window --text="桌面路径: [%folder.desktop%]"
+spcmd process --action=run --exec="notepad.exe [%sys.WINDIR%]\\win.ini"
 ```
 
 ## 示例
@@ -498,10 +497,6 @@ spcmd ipc --host=127.0.0.1 --port=9999 --value=hello
 
 # 获取环境变量
 spcmd getenv PATH
-
-# 获取当前时间和日期
-spcmd time
-spcmd date
 ```
 
 ## 构建
@@ -542,6 +537,27 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ## 更新日志
+
+### v7.7.1.0（未发布）
+- **安全修复**
+  - task：schtasks 参数白名单校验（拒绝引号/管道/重定向等注入字符），修复经提权路径的命令注入漏洞；改用 `_wsystem` 执行，修复中文任务名/路径乱码
+- **Bug修复**
+  - screenshot：修复宽度非4倍数（如1366x768）截图时颜色逐行错乱（DIB行填充与stb stride不一致）
+  - notify：修复中文标题/消息乱码（参数按UTF-8解码，误用CP_ACP）
+  - process run：修复不带 `--workdir` 时 CreateProcess 必败（空字符串目录，错误码123）
+  - tray/floating：修复多次 `--menu` 仅最后一个生效及内存泄漏
+  - config set：补 `fclose` 返回值检查（v7.7.0.0 声称已修，实际仅覆盖del路径）
+  - WinMain：修复 CommandLineToArgvW 失败路径 `free()` 字符串字面量导致的堆损坏
+  - 未知命令退出码改为1，便于脚本判断
+  - screenshot/config：补 `GlobalAlloc`/`GlobalLock` 判空；错误路径不再误删调用方 HBITMAP
+  - config：系统目录提权判断增加路径分隔符校验，避免前缀误判触发多余UAC
+- **代码清理**
+  - 移除无调用方的 `srand` 死代码
+- **文档勘误与更新**
+  - 勘误：v7.7.0.0 中 UUID v4/v7 相关修复条目对应的 uuid 命令已在后续提交中整体移除，条目仅作存档
+  - README：移除已删除的 time/date 命令文档；新增 `[%...%]` 系统变量替换说明；notify 参数表补充 `--timeout`
+  - scripts/spcmd_examples.ps1：移除不存在的 `restart --wait` 参数
+  - test.bat：移除 time/date/screen 空转用例
 
 ### v7.7.0.0 (2026-04-26)
 - **安全修复**
