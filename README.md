@@ -81,7 +81,7 @@ spcmd screenshot [--save=path|base64] [--format=png|bmp|jpg] [--base64=file] [--
 - `--save=base64` - 将截图以 Base64 编码文本输出到控制台
 - `--format=png|bmp|jpg` - 保存格式，默认为 jpg
 - `--base64=file` - 保存为 Base64 编码数据到指定文件
-- `--quality=value` - 图片质量（1-100），默认为 100
+- `--quality=value` - 图片质量（1-100），默认为 100；小于100时会等比缩小图像尺寸以减小文件大小（对所有格式生效）
 
 示例:
 ```bash
@@ -182,7 +182,7 @@ spcmd window --text=message [--title=title] [--width=width] [--height=height] [-
 - `--modal` - 设置窗口为模态窗口（阻塞其他窗口直到关闭并启用强制交互）
 - `--nodrag` - 禁止窗口拖拽
 - `--onclick=command` - 点击确认按钮后执行的命令
-- `--encoding=type` - 文本编码：utf8, gbk, big5, auto（默认：utf8）
+- `--encoding=type` - 文本编码：utf8, gbk, big5, auto（默认：utf8）。注意：命令行参数始终以UTF-8解码，通常保持默认utf8即可；gbk/big5仅当窗口内文本确实为对应编码时使用
 
 示例:
 ```bash
@@ -322,6 +322,7 @@ spcmd tray [--process=process_name] [--title=title] [--icon=icon_path] [--path=p
 - 如果指定了`--path`参数，程序将自动从路径中提取进程名称和图标
 - 菜单项将在右键点击托盘图标时显示
 - 当监控的进程退出时，托盘图标也会自动消失
+- 兼容用法：不带`--`前缀的位置参数会被视为图标路径
 
 示例:
 ```bash

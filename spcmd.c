@@ -466,7 +466,7 @@ int handle_command(int argc, char *argv[]) {
   BOOL command_found = FALSE;
 
   // High #1修复：验证命令名称长度（防止恶意输入）
-  // 合法命令名长度范围：至少1个字符，最多32个字符
+  // 合法命令名长度范围：至少1个字符，最多64个字符
   size_t cmd_len = strnlen(command_name, 256);
   if (cmd_len == 0 || cmd_len > 64) {
     printf("Error: Invalid command name length\n");
@@ -524,7 +524,35 @@ int handle_command(int argc, char *argv[]) {
   return command_found ? 0 : 1;
 }
 
+// L11修复：确保文件名扩展名与目标格式一致（按最后一个扩展名精确匹配）
+// 旧实现用strstr做任意位置子串匹配，"a.png.bak"会被误判为已有.png扩展名
+// 规则：最后扩展名与目标一致（ext1或兼容的ext2）→保持不变；
+//       是其它已知图片扩展名→替换；无扩展名/未知扩展名→追加
+static void ensure_file_extension(char *filename, size_t filename_size,
+                                  const char *ext1, const char *ext2) {
+  char *dot = strrchr(filename, '.');
+  if (dot && _stricmp(dot, ext1) == 0)
+    return;
+  if (dot && ext2 && _stricmp(dot, ext2) == 0)
+    return;
+  if (dot && (_stricmp(dot, ".bmp") == 0 || _stricmp(dot, ".png") == 0 ||
+              _stricmp(dot, ".jpg") == 0 || _stricmp(dot, ".jpeg") == 0)) {
+    strncpy(dot, ext1, filename_size - (size_t)(dot - filename) - 1);
+    filename[filename_size - 1] = '\0';
+    return;
+  }
+  strncat(filename, ext1, filename_size - strlen(filename) - 1);
+}
+
 void cmd_screenshot(int argc, char *argv[]) {
+  // L12修复：支持--h/--help（此前会直接执行截图）
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--h") == 0 || strcmp(argv[i], "--help") == 0) {
+      printf("Usage: spcmd screenshot [--save=path|base64] [--format=png|bmp|jpg] [--quality=1-100] [--base64=file]\n");
+      return;
+    }
+  }
+
   // Get screen DC
   HDC hScreenDC = GetDC(NULL);
   if (hScreenDC == NULL) {
@@ -701,7 +729,18 @@ void cmd_screenshot(int argc, char *argv[]) {
   // Handle base64 encoded data output to console
   else if (output_base64_to_console) {
     // Save bitmap to memory first with the specified format
-    char temp_filename[MAX_PATH] = "temp_screenshot.png";
+    // L11修复：使用系统临时目录生成唯一临时文件，避免固定名并发冲突与污染当前目录
+    char temp_filename[MAX_PATH] = {0};
+    char temp_dir[MAX_PATH] = {0};
+    if (GetTempPathA(MAX_PATH, temp_dir) == 0 ||
+        GetTempFileNameA(temp_dir, "spcmd", 0, temp_filename) == 0) {
+      printf("Error: Failed to create temporary file name (error=%lu)\n",
+             GetLastError());
+      DeleteObject(hBitmap);
+      DeleteDC(hMemoryDC);
+      ReleaseDC(NULL, hScreenDC);
+      return;
+    }
     int result =
         save_bitmap_as_format(hBitmap, hScreenDC, temp_filename, format,
                               quality, TRUE); // 安静模式，不输出日志
@@ -743,58 +782,19 @@ void cmd_screenshot(int argc, char *argv[]) {
     } else {
       // save_bitmap_as_format失败
       printf("Error: Failed to save bitmap as format\n");
+      DeleteFile(temp_filename); // L11修复：失败路径同样清理临时文件
     }
   } else {
     // Save bitmap in the specified format
     // Ensure filename has correct extension
+    // L11修复：按最后一个扩展名精确匹配
     if (strcmp(format, "png") == 0 || strcmp(format, "PNG") == 0) {
-      // Ensure filename has .png extension
-      if (strstr(filename, ".bmp")) {
-        // Replace .bmp with .png
-        char *dot = strrchr(filename, '.');
-        if (dot) {
-          strncpy(dot, ".png", MAX_PATH - (dot - filename) - 1);
-          dot[MAX_PATH - (dot - filename) - 1] = '\0';
-        }
-      } else if (!strstr(filename, ".png")) {
-        // Add .png extension if no extension
-        strncat(filename, ".png", MAX_PATH - strlen(filename) - 1);
-      }
+      ensure_file_extension(filename, MAX_PATH, ".png", NULL);
     } else if (strcmp(format, "jpg") == 0 || strcmp(format, "JPG") == 0 ||
                strcmp(format, "jpeg") == 0 || strcmp(format, "JPEG") == 0) {
-      // Ensure filename has .jpg extension
-      if (strstr(filename, ".bmp")) {
-        // Replace .bmp with .jpg
-        char *dot = strrchr(filename, '.');
-        if (dot) {
-          strncpy(dot, ".jpg", MAX_PATH - (dot - filename) - 1);
-          dot[MAX_PATH - (dot - filename) - 1] = '\0';
-        }
-      } else if (!strstr(filename, ".jpg") && !strstr(filename, ".jpeg")) {
-        // Add .jpg extension if no extension
-        strncat(filename, ".jpg", MAX_PATH - strlen(filename) - 1);
-      }
+      ensure_file_extension(filename, MAX_PATH, ".jpg", ".jpeg");
     } else {
-      // Save as BMP (default)
-      // Ensure filename has .bmp extension
-      if (strstr(filename, ".png")) {
-        // Replace .png with .bmp
-        char *dot = strrchr(filename, '.');
-        if (dot) {
-          strncpy(dot, ".bmp", MAX_PATH - (dot - filename) - 1);
-          dot[MAX_PATH - (dot - filename) - 1] = '\0';
-        }
-      } else if (strstr(filename, ".jpg") || strstr(filename, ".jpeg")) {
-        // Replace .jpg/.jpeg with .bmp
-        char *dot = strrchr(filename, '.');
-        if (dot) {
-          strncpy(dot, ".bmp", MAX_PATH - (dot - filename) - 1);
-          dot[MAX_PATH - (dot - filename) - 1] = '\0';
-        }
-      } else if (!strstr(filename, ".bmp")) {
-        // Add .bmp extension if no extension
-        strncat(filename, ".bmp", MAX_PATH - strlen(filename) - 1);
-      }
+      ensure_file_extension(filename, MAX_PATH, ".bmp", NULL);
       // Use "bmp" as format for the save function
       strncpy(format, "bmp", 4);
       format[3] = '\0';
@@ -812,6 +812,14 @@ void cmd_screenshot(int argc, char *argv[]) {
 }
 
 void cmd_shortcut(int argc, char *argv[]) {
+  // L12修复：支持--h/--help
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--h") == 0 || strcmp(argv[i], "--help") == 0) {
+      printf("Usage: spcmd shortcut --target=path [--name=name] [--desc=description] [--icon=iconpath] [--workdir=dir]\n");
+      return;
+    }
+  }
+
   // Check required parameters
   char targetPath[MAX_PATH] = {0};
   char shortcutName[MAX_PATH] = {0};
@@ -972,6 +980,14 @@ void cmd_shortcut(int argc, char *argv[]) {
 }
 
 void cmd_autorun(int argc, char *argv[]) {
+
+  // L12修复：支持--h/--help
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--h") == 0 || strcmp(argv[i], "--help") == 0) {
+      printf("Usage: spcmd autorun --target=path [--name=name] [--args=args] [--workdir=dir] [--remove]\n");
+      return;
+    }
+  }
 
   // Check required parameters
   char targetPath[MAX_PATH] = {0};
@@ -1230,6 +1246,14 @@ void cmd_autorun(int argc, char *argv[]) {
 
 void cmd_task(int argc, char *argv[]) {
 
+  // L12修复：支持--h/--help（在提权逻辑之前，避免查看帮助触发UAC）
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--h") == 0 || strcmp(argv[i], "--help") == 0) {
+      printf("Usage: spcmd task --name=task_name --exec=program_path [--trigger=daily|weekly|monthly] [--starttime=HH:MM] [--startdate=YYYY-MM-DD]\n");
+      return;
+    }
+  }
+
   // Parse parameters
   char taskName[MAX_PATH] = {0};
   char programPath[MAX_PATH] = {0};
@@ -1400,6 +1424,14 @@ void cmd_task(int argc, char *argv[]) {
 }
 
 void cmd_restart(int argc, char *argv[]) {
+
+  // L12修复：支持--h/--help
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--h") == 0 || strcmp(argv[i], "--help") == 0) {
+      printf("Usage: spcmd restart --path=process_path [--workdir=working_directory]\n");
+      return;
+    }
+  }
 
   // Parse parameters
   char processPath[MAX_PATH] = {0};
@@ -1622,6 +1654,14 @@ static int show_message_box_utf8(HWND hwnd, const char *text_utf8,
 }
 
 void cmd_infoboxtop(int argc, char *argv[]) {
+  // L12修复：支持--h/--help
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--h") == 0 || strcmp(argv[i], "--help") == 0) {
+      printf("Usage: spcmd infoboxtop --message=message --title=title\n");
+      return;
+    }
+  }
+
   // 使用统一的参数解析框架
   ParamDefinition param_defs[] = {{"message", NULL, TRUE, FALSE},
                                   {"title", NULL, TRUE, FALSE}};
@@ -1668,6 +1708,14 @@ void cmd_infoboxtop(int argc, char *argv[]) {
 }
 
 void cmd_qboxtop(int argc, char *argv[]) {
+  // L12修复：支持--h/--help
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--h") == 0 || strcmp(argv[i], "--help") == 0) {
+      printf("Usage: spcmd qboxtop --message=message --title=title --program=command\n");
+      return;
+    }
+  }
+
   // 使用统一的参数解析框架
   ParamDefinition param_defs[] = {{"message", NULL, TRUE, FALSE},
                                   {"title", NULL, TRUE, FALSE},
@@ -2319,49 +2367,51 @@ BOOL CALLBACK EnumWindowsProcGetHWND(HWND hwnd, LPARAM lParam) {
   return TRUE; // 继续枚举
 }
 
-// 根据颜色名称获取RGB值
-COLORREF GetColorByName(const char *colorName) {
+// 根据颜色名称查找RGB值
+// L8修复：未识别的颜色名返回FALSE，由调用方保留默认色，
+// 避免--textcolor拼写错误时静默变白色导致白底白字
+static BOOL lookup_color(const char *colorName, COLORREF *out) {
   if (_stricmp(colorName, "white") == 0)
-    return RGB(255, 255, 255);
-  if (_stricmp(colorName, "black") == 0)
-    return RGB(0, 0, 0);
-  if (_stricmp(colorName, "red") == 0)
-    return RGB(255, 0, 0);
-  if (_stricmp(colorName, "green") == 0)
-    return RGB(0, 255, 0);
-  if (_stricmp(colorName, "blue") == 0)
-    return RGB(0, 0, 255);
-  if (_stricmp(colorName, "yellow") == 0)
-    return RGB(255, 255, 0);
-  if (_stricmp(colorName, "cyan") == 0)
-    return RGB(0, 255, 255);
-  if (_stricmp(colorName, "magenta") == 0)
-    return RGB(255, 0, 255);
-  if (_stricmp(colorName, "gray") == 0)
-    return RGB(128, 128, 128);
-  if (_stricmp(colorName, "lightgray") == 0)
-    return RGB(211, 211, 211);
-  if (_stricmp(colorName, "darkgray") == 0)
-    return RGB(169, 169, 169);
-  if (_stricmp(colorName, "orange") == 0)
-    return RGB(255, 165, 0);
-  if (_stricmp(colorName, "purple") == 0)
-    return RGB(128, 0, 128);
-  if (_stricmp(colorName, "brown") == 0)
-    return RGB(165, 42, 42);
-  if (_stricmp(colorName, "pink") == 0)
-    return RGB(255, 192, 203);
-  if (_stricmp(colorName, "lime") == 0)
-    return RGB(0, 255, 0);
-  if (_stricmp(colorName, "navy") == 0)
-    return RGB(0, 0, 128);
-  if (_stricmp(colorName, "teal") == 0)
-    return RGB(0, 128, 128);
-  if (_stricmp(colorName, "olive") == 0)
-    return RGB(128, 128, 0);
-
-  // 默认返回白色
-  return RGB(255, 255, 255);
+    *out = RGB(255, 255, 255);
+  else if (_stricmp(colorName, "black") == 0)
+    *out = RGB(0, 0, 0);
+  else if (_stricmp(colorName, "red") == 0)
+    *out = RGB(255, 0, 0);
+  else if (_stricmp(colorName, "green") == 0)
+    *out = RGB(0, 255, 0);
+  else if (_stricmp(colorName, "blue") == 0)
+    *out = RGB(0, 0, 255);
+  else if (_stricmp(colorName, "yellow") == 0)
+    *out = RGB(255, 255, 0);
+  else if (_stricmp(colorName, "cyan") == 0)
+    *out = RGB(0, 255, 255);
+  else if (_stricmp(colorName, "magenta") == 0)
+    *out = RGB(255, 0, 255);
+  else if (_stricmp(colorName, "gray") == 0)
+    *out = RGB(128, 128, 128);
+  else if (_stricmp(colorName, "lightgray") == 0)
+    *out = RGB(211, 211, 211);
+  else if (_stricmp(colorName, "darkgray") == 0)
+    *out = RGB(169, 169, 169);
+  else if (_stricmp(colorName, "orange") == 0)
+    *out = RGB(255, 165, 0);
+  else if (_stricmp(colorName, "purple") == 0)
+    *out = RGB(128, 0, 128);
+  else if (_stricmp(colorName, "brown") == 0)
+    *out = RGB(165, 42, 42);
+  else if (_stricmp(colorName, "pink") == 0)
+    *out = RGB(255, 192, 203);
+  else if (_stricmp(colorName, "lime") == 0)
+    *out = RGB(0, 255, 0);
+  else if (_stricmp(colorName, "navy") == 0)
+    *out = RGB(0, 0, 128);
+  else if (_stricmp(colorName, "teal") == 0)
+    *out = RGB(0, 128, 128);
+  else if (_stricmp(colorName, "olive") == 0)
+    *out = RGB(128, 128, 0);
+  else
+    return FALSE;
+  return TRUE;
 }
 
 // 自定义弹窗窗口过程函数
@@ -2648,6 +2698,15 @@ LRESULT CALLBACK WindowWndProc(HWND hwnd, UINT msg, WPARAM wParam,
 
 void cmd_window(int argc, char *argv[]) {
 
+  // L12修复：支持--h/--help
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--h") == 0 || strcmp(argv[i], "--help") == 0) {
+      printf("Usage: spcmd window --text=message [--title=title] [--width=100-2000] [--height=100-2000] [--fontsize=8-72] [--bgcolor=color] [--textcolor=color] [--bold] [--modal] [--nodrag] [--onclick=command] [--encoding=utf8|gbk|big5|auto]\n");
+      printf("Colors: name (white,black,red,...) or \"r,g,b\"\n");
+      return;
+    }
+  }
+
   // Parse parameters
   char *message = NULL;
   char title[256] = "SYSTEM INFORMATION";
@@ -2698,10 +2757,11 @@ void cmd_window(int argc, char *argv[]) {
           if (b > 255)
             b = 255;
           bgColor = RGB(r, g, b);
+        } else {
+          printf("Warning: Invalid RGB color '%s', keeping default background color\n", colorStr);
         }
-      } else {
-        // 使用颜色名称
-        bgColor = GetColorByName(colorStr);
+      } else if (!lookup_color(colorStr, &bgColor)) {
+        printf("Warning: Unknown color name '%s', keeping default background color\n", colorStr);
       }
     } else if (strncmp(argv[i], "--textcolor=", 12) == 0) {
       char *colorStr = argv[i] + 12;
@@ -2723,10 +2783,11 @@ void cmd_window(int argc, char *argv[]) {
           if (b > 255)
             b = 255;
           textColor = RGB(r, g, b);
+        } else {
+          printf("Warning: Invalid RGB color '%s', keeping default text color\n", colorStr);
         }
-      } else {
-        // 使用颜色名称
-        textColor = GetColorByName(colorStr);
+      } else if (!lookup_color(colorStr, &textColor)) {
+        printf("Warning: Unknown color name '%s', keeping default text color\n", colorStr);
       }
     } else if (strcmp(argv[i], "--bold") == 0) {
       bold = TRUE;
@@ -3100,6 +3161,14 @@ BOOL ElevatePrivileges(int argc, char *argv[]) {
 
 void cmd_notify(int argc, char *argv[]) {
 
+  // L12修复：支持--h/--help
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--h") == 0 || strcmp(argv[i], "--help") == 0) {
+      printf("Usage: spcmd notify --title=title --message=message [--icon=info|warning|error] [--timeout=1-60]\n");
+      return;
+    }
+  }
+
   // 使用新的参数解析框架
   ParamDefinition param_defs[] = {{"title", NULL, TRUE, FALSE},
                                   {"message", NULL, TRUE, FALSE},
@@ -3379,6 +3448,14 @@ void display_ini_data(struct IniData *data) {
 
 void cmd_config(int argc, char *argv[]) {
 
+  // L12修复：支持--h/--help
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--h") == 0 || strcmp(argv[i], "--help") == 0) {
+      printf("Usage: spcmd config --file=path [--action=get|set|del] [--section=section] [--key=key] [--value=value]\n");
+      return;
+    }
+  }
+
   // Parse parameters
   char filePath[MAX_PATH] = {0};
   char action[20] = "get"; // default action
@@ -3529,16 +3606,21 @@ void cmd_config(int argc, char *argv[]) {
       unsigned char bom[] = {0xEF, 0xBB, 0xBF};
       fwrite(bom, 1, 3, file);
 
-      // 按section分组写入
+      // 按section分组写入（L7修复：相邻条目同section时跳过重复的节头）
       char line[1024];
+      const char *last_section = NULL;
       struct IniEntry *write_entry = data.head;
       while (write_entry) {
         if (write_entry->section[0] != '\0') {
-          snprintf(line, sizeof(line), "[%s]\n", write_entry->section);
+          if (!last_section || strcmp(last_section, write_entry->section) != 0) {
+            snprintf(line, sizeof(line), "[%s]\n", write_entry->section);
+            fwrite(line, 1, strlen(line), file);
+          }
         } else {
           snprintf(line, sizeof(line), "\n");
+          fwrite(line, 1, strlen(line), file);
         }
-        fwrite(line, 1, strlen(line), file);
+        last_section = write_entry->section;
 
         if (write_entry->name[0] != '\0') {
           snprintf(line, sizeof(line), "%s = %s\n", write_entry->name, write_entry->value);
@@ -3643,16 +3725,21 @@ void cmd_config(int argc, char *argv[]) {
       unsigned char bom[] = {0xEF, 0xBB, 0xBF};
       fwrite(bom, 1, 3, file);
 
-      // 按section分组写入
+      // 按section分组写入（L7修复：相邻条目同section时跳过重复的节头）
       char line[1024];
+      const char *last_section = NULL;
       struct IniEntry *write_entry = data.head;
       while (write_entry) {
         if (write_entry->section[0] != '\0') {
-          snprintf(line, sizeof(line), "[%s]\n", write_entry->section);
+          if (!last_section || strcmp(last_section, write_entry->section) != 0) {
+            snprintf(line, sizeof(line), "[%s]\n", write_entry->section);
+            fwrite(line, 1, strlen(line), file);
+          }
         } else {
           snprintf(line, sizeof(line), "\n");
+          fwrite(line, 1, strlen(line), file);
         }
-        fwrite(line, 1, strlen(line), file);
+        last_section = write_entry->section;
 
         if (write_entry->name[0] != '\0') {
           snprintf(line, sizeof(line), "%s = %s\n", write_entry->name, write_entry->value);
@@ -3671,11 +3758,20 @@ void cmd_config(int argc, char *argv[]) {
 
     free_ini_data(&data);
   } else {
-    printf("Error: Unknown action '%s'. Use get, set, save, or del\n", action);
+    printf("Error: Unknown action '%s'. Use get, set, or del\n", action);
   }
 }
 
 int cmd_process(int argc, char *argv[]) {
+
+  // L12修复：支持--h/--help
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--h") == 0 || strcmp(argv[i], "--help") == 0) {
+      printf("Usage: spcmd process [--action=run|check|kill] [--exec=command] [--name=process_name] [--keyword=keyword] [--pid=process_id] [--workdir=dir]\n");
+      printf("check finds process returns exit code 0, not found returns 1; --keyword is only for check\n");
+      return 0;
+    }
+  }
 
   // Parse parameters
   char action[20] = "check"; // default action
@@ -4026,9 +4122,14 @@ static void parse_menu_args(int argc, char *argv[], MenuCommand **out_commands,
   // 统计合法的--menu出现次数（必须包含逗号分隔的name,command）
   int count = 0;
   for (int i = 2; i < argc; i++) {
-    if (strncmp(argv[i], "--menu=", 7) == 0 &&
-        strchr(argv[i] + 7, ',') != NULL) {
-      count++;
+    if (strncmp(argv[i], "--menu=", 7) == 0) {
+      if (strchr(argv[i] + 7, ',') != NULL) {
+        count++;
+      } else {
+        // L10修复：格式错误时明确告警，不再静默丢弃
+        printf("Warning: --menu ignored, expected format \"name,command\": %s\n",
+               argv[i] + 7);
+      }
     }
   }
   if (count <= 0)
@@ -4045,7 +4146,7 @@ static void parse_menu_args(int argc, char *argv[], MenuCommand **out_commands,
     char *menu_value = argv[i] + 7;
     char *comma_pos = strchr(menu_value, ',');
     if (!comma_pos)
-      continue;
+      continue; // 统计阶段已保证含逗号，此处为兜底
     // 分离菜单项名称和命令
     size_t name_len = (size_t)(comma_pos - menu_value);
     if (name_len > sizeof(menus[current_index].name) - 1)
@@ -4152,8 +4253,9 @@ void update_tray_icon(TrayIconData *trayData) {
   if (!trayData->process_running) {
     // 删除托盘图标
     Shell_NotifyIcon(NIM_DELETE, &trayData->nid);
-    // 发送退出消息
-    PostMessage(trayData->hwnd, WM_DESTROY, 0, 0);
+    // L10修复：用DestroyWindow正确销毁窗口（PostMessage直接投递WM_DESTROY
+    // 不会真正销毁窗口，导致后续UnregisterClass失败）
+    DestroyWindow(trayData->hwnd);
     return;
   }
 
@@ -4385,12 +4487,16 @@ LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT msg, WPARAM wParam,
           PROCESS_INFORMATION pi = {0};
           si.cb = sizeof(si);
 
-          CreateProcess(NULL, command, NULL, NULL, FALSE, 0, NULL, NULL, &si,
-                        &pi);
-
-          // 关闭进程和线程句柄
-          CloseHandle(pi.hProcess);
-          CloseHandle(pi.hThread);
+          // L10修复：检查CreateProcess结果，失败时打印错误
+          if (CreateProcess(NULL, command, NULL, NULL, FALSE, 0, NULL, NULL,
+                            &si, &pi)) {
+            // 关闭进程和线程句柄
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+          } else {
+            printf("Error: Failed to execute menu command '%s' (error=%lu)\n",
+                   command, GetLastError());
+          }
         }
       }
       break;
@@ -4557,12 +4663,16 @@ LRESULT CALLBACK FloatingWndProc(HWND hwnd, UINT msg, WPARAM wParam,
           PROCESS_INFORMATION pi = {0};
           si.cb = sizeof(si);
 
-          CreateProcess(NULL, command, NULL, NULL, FALSE, 0, NULL, NULL, &si,
-                        &pi);
-
-          // 关闭进程和线程句柄
-          CloseHandle(pi.hProcess);
-          CloseHandle(pi.hThread);
+          // L10修复：检查CreateProcess结果，失败时打印错误
+          if (CreateProcess(NULL, command, NULL, NULL, FALSE, 0, NULL, NULL,
+                            &si, &pi)) {
+            // 关闭进程和线程句柄
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+          } else {
+            printf("Error: Failed to execute menu command '%s' (error=%lu)\n",
+                   command, GetLastError());
+          }
         }
       }
       break;
@@ -4578,7 +4688,8 @@ LRESULT CALLBACK FloatingWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     floatingData->process_running =
         is_process_running(floatingData->process_name);
     if (!floatingData->process_running) {
-      PostMessage(hwnd, WM_DESTROY, 0, 0);
+      // L10修复：正确销毁窗口
+      DestroyWindow(hwnd);
     }
     break;
    }
@@ -4619,6 +4730,15 @@ LRESULT CALLBACK FloatingWndProc(HWND hwnd, UINT msg, WPARAM wParam,
 
 // 托盘图标命令
 void cmd_tray(int argc, char *argv[]) {
+
+  // L12修复：支持--h/--help
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--h") == 0 || strcmp(argv[i], "--help") == 0) {
+      printf("Usage: spcmd tray [--process=process_name] [--title=title] [--icon=icon_path] [--path=process_path] [--menu=\"name,command\"]\n");
+      printf("--menu can be repeated; if --path is provided, process name/icon are auto-detected\n");
+      return;
+    }
+  }
 
   // Parse parameters
   char process_name[MAX_PATH] = "python.exe"; // default process name
@@ -4810,8 +4930,8 @@ void update_floating_icon(FloatingIconData *floatingData) {
   floatingData->process_running =
       is_process_running(floatingData->process_name);
   if (!floatingData->process_running) {
-    // 进程未运行，发送退出消息
-    PostMessage(floatingData->hwnd, WM_DESTROY, 0, 0);
+    // 进程未运行，销毁窗口（L10修复：用DestroyWindow替代直接投递WM_DESTROY）
+    DestroyWindow(floatingData->hwnd);
   }
 }
 
@@ -4844,6 +4964,15 @@ void destroy_floating_icon(FloatingIconData *floatingData) {
 
 // 浮动图标命令
 void cmd_floating(int argc, char *argv[]) {
+
+  // L12修复：支持--h/--help
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--h") == 0 || strcmp(argv[i], "--help") == 0) {
+      printf("Usage: spcmd floating [--process=process_name] [--title=title] [--icon=icon_path] [--path=process_path] [--menu=\"name,command\"]\n");
+      printf("--menu can be repeated; if --path is provided, process name/icon are auto-detected\n");
+      return;
+    }
+  }
 
   // 使用新的参数解析框架
   ParamDefinition param_defs[] = {
