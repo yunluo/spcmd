@@ -558,7 +558,23 @@ void cmd_screenshot(int argc, char *argv[]) {
   HBITMAP hOldBitmap = (HBITMAP)SelectObject(hMemoryDC, hBitmap);
 
   // Capture full screen (default behavior)
-  BitBlt(hMemoryDC, 0, 0, screenWidth, screenHeight, hScreenDC, 0, 0, SRCCOPY);
+  // 修复：检查BitBlt返回值；XP上CAPTUREBLT会引起鼠标闪烁，仅Vista+启用以包含分层窗口
+  {
+    DWORD btMajor = 0, btMinor = 0;
+    GetWindowsVersionSafe(&btMajor, &btMinor);
+    DWORD rasterOp = SRCCOPY;
+    if (!(btMajor == 5 && btMinor == 1)) {
+      rasterOp |= CAPTUREBLT;
+    }
+    if (!BitBlt(hMemoryDC, 0, 0, screenWidth, screenHeight, hScreenDC, 0, 0,
+                rasterOp)) {
+      printf("Error: BitBlt failed (error=%lu)\n", GetLastError());
+      DeleteObject(hBitmap);
+      DeleteDC(hMemoryDC);
+      ReleaseDC(NULL, hScreenDC);
+      return;
+    }
+  }
 
   // Restore old bitmap
   SelectObject(hMemoryDC, hOldBitmap);
@@ -1580,6 +1596,31 @@ void cmd_restart(int argc, char *argv[]) {
   }
 }
 
+// H4补充修复：将UTF-8参数转为宽字符并弹出Unicode消息框，
+// 避免MessageBoxA在GBK/Big5等ANSI代码页下简繁中文乱码
+static int show_message_box_utf8(HWND hwnd, const char *text_utf8,
+                                 const char *caption_utf8, UINT type) {
+  int text_len = MultiByteToWideChar(CP_UTF8, 0, text_utf8, -1, NULL, 0);
+  int cap_len = MultiByteToWideChar(CP_UTF8, 0, caption_utf8, -1, NULL, 0);
+  if (text_len <= 0 || cap_len <= 0) {
+    // 转换失败时退回ANSI版本
+    return MessageBoxA(hwnd, text_utf8, caption_utf8, type);
+  }
+  WCHAR *wtext = (WCHAR *)malloc(text_len * sizeof(WCHAR));
+  WCHAR *wcap = (WCHAR *)malloc(cap_len * sizeof(WCHAR));
+  if (!wtext || !wcap) {
+    free(wtext);
+    free(wcap);
+    return MessageBoxA(hwnd, text_utf8, caption_utf8, type);
+  }
+  MultiByteToWideChar(CP_UTF8, 0, text_utf8, -1, wtext, text_len);
+  MultiByteToWideChar(CP_UTF8, 0, caption_utf8, -1, wcap, cap_len);
+  int result = MessageBoxW(hwnd, wtext, wcap, type);
+  free(wtext);
+  free(wcap);
+  return result;
+}
+
 void cmd_infoboxtop(int argc, char *argv[]) {
   // 使用统一的参数解析框架
   ParamDefinition param_defs[] = {{"message", NULL, TRUE, FALSE},
@@ -1617,9 +1658,9 @@ void cmd_infoboxtop(int argc, char *argv[]) {
     hActiveWnd = GetDesktopWindow();
   }
 
-  // 显示置顶消息框
-  MessageBoxA(hActiveWnd, message, title,
-              MB_OK | MB_ICONINFORMATION | MB_SYSTEMMODAL);
+  // 显示置顶消息框（H4补充修复：Unicode版本，简繁中文不乱码）
+  show_message_box_utf8(hActiveWnd, message, title,
+                        MB_OK | MB_ICONINFORMATION | MB_SYSTEMMODAL);
   printf("Top-most message box displayed\n");
 
   // 释放参数上下文
@@ -1660,9 +1701,9 @@ void cmd_qboxtop(int argc, char *argv[]) {
     hActiveWnd = GetDesktopWindow();
   }
 
-  // 显示置顶消息框
-  int result = MessageBoxA(hActiveWnd, message, title,
-                           MB_YESNO | MB_ICONQUESTION | MB_SYSTEMMODAL);
+  // 显示置顶消息框（H4补充修复：Unicode版本，简繁中文不乱码）
+  int result = show_message_box_utf8(hActiveWnd, message, title,
+                                     MB_YESNO | MB_ICONQUESTION | MB_SYSTEMMODAL);
 
   if (result == IDYES) {
     // Run the specified program
@@ -1883,6 +1924,26 @@ int save_bitmap_as_format(HBITMAP hBitmap, HDC hScreenDC, const char *filename,
       dstRow[x * 3 + 0] = srcRow[x * 3 + 2]; // R (交换BGR->RGB)
       dstRow[x * 3 + 1] = srcRow[x * 3 + 1]; // G
       dstRow[x * 3 + 2] = srcRow[x * 3 + 0]; // B
+    }
+  }
+
+  // 修复：检测全黑画面——锁屏/UAC安全桌面/断开的RDP/服务或计划任务
+  // 等非交互会话中截图的典型症状。quiet模式保持静默以保证输出可被脚本解析
+  if (!quiet) {
+    BOOL all_black = TRUE;
+    size_t packed_size = (size_t)width * (size_t)height * 3;
+    for (size_t i = 0; i < packed_size; i++) {
+      if (packed[i] != 0) {
+        all_black = FALSE;
+        break;
+      }
+    }
+    if (all_black) {
+      printf("Warning: Captured image is completely black. Possible causes: "
+             "locked workstation, UAC secure desktop, disconnected RDP "
+             "session, or running from a non-interactive session "
+             "(service/scheduled task). Screen capture does not require "
+             "admin rights.\n");
     }
   }
 
