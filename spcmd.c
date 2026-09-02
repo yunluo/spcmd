@@ -3944,6 +3944,10 @@ ProcessIdList *get_pids_by_exe_name(const char *exeName) {
       } while (Process32Next(hSnapshot, &pe32));
     }
     CloseHandle(hSnapshot);
+  } else {
+    // 修复：快照失败时明确报错，避免被调用方的"No process found"误导
+    printf("Error: Unable to create process snapshot (error=%lu)\n",
+           GetLastError());
   }
 
   return pidList;
