@@ -137,8 +137,10 @@ INI_API int ini_parse_string_length(const char* string, size_t length, ini_handl
 
 /* Maximum line length for any line in INI file (stack or heap). Note that
    this must be 3 more than the longest line (due to '\r', '\n', and '\0'). */
+/* M6修复：200→320。行缓冲必须能容纳MAX_SECTION(256)长度的节名行，
+   否则超过~197字节的行会被inih判为过长而丢弃，长节名修复形同虚设 */
 #ifndef INI_MAX_LINE
-#define INI_MAX_LINE 200
+#define INI_MAX_LINE 320
 #endif
 
 /* Nonzero to allow heap line buffer to grow via realloc(), zero for a

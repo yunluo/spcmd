@@ -1167,8 +1167,19 @@ void cmd_autorun(int argc, char *argv[]) {
 
       if (SUCCEEDED(hres)) {
         // Convert to wide character
+        // L13修复：检查转换结果（与cmd_shortcut及回退路径保持一致），
+        // 失败时wsz为未初始化栈内存，Save会写到垃圾路径
         WCHAR wsz[MAX_PATH];
-        MultiByteToWideChar(CP_UTF8, 0, shortcutPath, -1, wsz, MAX_PATH);
+        int wideLen =
+            MultiByteToWideChar(CP_UTF8, 0, shortcutPath, -1, wsz, MAX_PATH);
+        if (wideLen == 0) {
+          printf("Error: Failed to convert path to Unicode (error=%lu)\n",
+                 GetLastError());
+          IPersistFile_Release(pPersistFile);
+          IShellLinkA_Release(pShellLink);
+          CoUninitialize();
+          return;
+        }
 
         hres = IPersistFile_Save(pPersistFile, wsz, TRUE);
 
