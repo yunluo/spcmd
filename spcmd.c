@@ -610,6 +610,7 @@ void cmd_screenshot(int argc, char *argv[]) {
   // Generate filename and format
   char filename[MAX_PATH] = "screenshot.jpg";
   char format[10] = "jpg";              // default format
+  BOOL format_explicit = FALSE;         // F1修复：标记用户是否显式指定--format
   char base64_filename[MAX_PATH] = {0}; // for base64 encoded data
   BOOL save_as_base64 = FALSE;
   BOOL output_base64_to_console = FALSE; // Flag for --save=base64
@@ -651,6 +652,7 @@ void cmd_screenshot(int argc, char *argv[]) {
   if (format_value) {
     strncpy(format, format_value, sizeof(format) - 1);
     format[sizeof(format) - 1] = '\0';
+    format_explicit = TRUE;
   }
 
   const char *base64_value = get_param_value(context, "base64");
@@ -787,6 +789,18 @@ void cmd_screenshot(int argc, char *argv[]) {
   } else {
     // Save bitmap in the specified format
     // Ensure filename has correct extension
+    // F1修复：未指定--format时从文件名扩展名推断格式（x.png保存PNG内容），
+    // 不再让默认jpg覆盖用户明确命名的扩展名；无扩展名/未知扩展名仍为jpg
+    if (!format_explicit) {
+      char *ext_dot = strrchr(filename, '.');
+      if (ext_dot && _stricmp(ext_dot, ".png") == 0)
+        strncpy(format, "png", sizeof(format) - 1);
+      else if (ext_dot && (_stricmp(ext_dot, ".jpg") == 0 ||
+                           _stricmp(ext_dot, ".jpeg") == 0))
+        strncpy(format, "jpg", sizeof(format) - 1);
+      else if (ext_dot && _stricmp(ext_dot, ".bmp") == 0)
+        strncpy(format, "bmp", sizeof(format) - 1);
+    }
     // L11修复：按最后一个扩展名精确匹配
     if (strcmp(format, "png") == 0 || strcmp(format, "PNG") == 0) {
       ensure_file_extension(filename, MAX_PATH, ".png", NULL);
