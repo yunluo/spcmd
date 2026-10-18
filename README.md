@@ -4,7 +4,7 @@ SPCMD是一个功能强大的Windows系统命令行工具，提供了多种系�
 
 ## 版本
 
-**当前版本: 7.8.0.0**
+**当前版本: 7.8.1.0**
 
 ## 功能特性
 
@@ -538,6 +538,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ## 更新日志
+
+### v7.8.1.0 (2026-10-18)
+- **Bug修复**
+  - ini：行缓冲 `INI_MAX_LINE` 200→320——此前节名/键名上限提到 256 但行缓冲未同步，超过约197字节的行仍会被判为"过长"丢弃
+  - autorun：主保存路径补 `MultiByteToWideChar` 返回值检查（失败时不再写未初始化栈内存）
+- **行为改进**
+  - screenshot：未指定 `--format` 时从文件名扩展名推断格式（`--save=x.png` 保存PNG内容，不再覆盖为jpg）；显式 `--format` 仍最优先；未知/无扩展名维持 jpg 默认
+- **功能性验证**
+  - 全部17个命令逐项功能检查通过（含 tray/floating 目标退出自动消失、ipc 端到端收发、timesync NTP 解析、config 闭环与 UTF-8 BOM）
 
 ### v7.8.0.0 (2026-09-02)
 - **安全修复**
