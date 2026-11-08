@@ -114,7 +114,10 @@ typedef struct {
 // 命令结构定义
 typedef struct {
   const char *name;
-  void (*handler)(int argc, char *argv[]);
+  union {
+    void (*handler)(int argc, char *argv[]);    // 常规命令
+    int (*handler_ret)(int argc, char *argv[]); // 带退出码的命令（returns_value=1）
+  } fn;
   int returns_value;
 } Command;
 
@@ -183,24 +186,24 @@ char *base64_encode(const unsigned char *data, size_t input_length, size_t *outp
 // 命令表
 //==============================================================================
 Command command_table[] = {
-    {"screenshot", (void (*)(int, char **))cmd_screenshot, 0},
-    {"shortcut", (void (*)(int, char **))cmd_shortcut, 0},
-    {"autorun", (void (*)(int, char **))cmd_autorun, 0},
-    {"infoboxtop", (void (*)(int, char **))cmd_infoboxtop, 0},
-    {"qboxtop", (void (*)(int, char **))cmd_qboxtop, 0},
-    {"window", (void (*)(int, char **))cmd_window, 0},
-    {"task", (void (*)(int, char **))cmd_task, 0},
-    {"restart", (void (*)(int, char **))cmd_restart, 0},
-    {"notify", (void (*)(int, char **))cmd_notify, 0},
-    {"config", (void (*)(int, char **))cmd_config, 0},
-    {"process", (void (*)(int, char **))cmd_process, 1},
-    {"get_hwnd_by_exe", (void (*)(int, char **))cmd_get_hwnd_by_exe, 1},
-    {"tray", (void (*)(int, char **))cmd_tray, 0},
-    {"floating", (void (*)(int, char **))cmd_floating, 0},
-    {"timesync", (void (*)(int, char **))cmd_timesync, 0},
-    {"ipc", (void (*)(int, char **))cmd_ipc, 0},
-    {"getenv", (void (*)(int, char **))cmd_getenv, 0},
-    {NULL, NULL, 0}
+    {"screenshot", {.handler = cmd_screenshot}, 0},
+    {"shortcut", {.handler = cmd_shortcut}, 0},
+    {"autorun", {.handler = cmd_autorun}, 0},
+    {"infoboxtop", {.handler = cmd_infoboxtop}, 0},
+    {"qboxtop", {.handler = cmd_qboxtop}, 0},
+    {"window", {.handler = cmd_window}, 0},
+    {"task", {.handler = cmd_task}, 0},
+    {"restart", {.handler = cmd_restart}, 0},
+    {"notify", {.handler = cmd_notify}, 0},
+    {"config", {.handler = cmd_config}, 0},
+    {"process", {.handler_ret = cmd_process}, 1},
+    {"get_hwnd_by_exe", {.handler_ret = cmd_get_hwnd_by_exe}, 1},
+    {"tray", {.handler = cmd_tray}, 0},
+    {"floating", {.handler = cmd_floating}, 0},
+    {"timesync", {.handler = cmd_timesync}, 0},
+    {"ipc", {.handler = cmd_ipc}, 0},
+    {"getenv", {.handler = cmd_getenv}, 0},
+    {NULL, {NULL}, 0}
 };
 
 //==============================================================================
@@ -497,16 +500,11 @@ int handle_command(int argc, char *argv[]) {
     if (strcmp(command_table[i].name, command_name) == 0) {
       command_found = TRUE;
 
-      // 特殊处理有返回值的命令
+      // 带返回值的命令取其退出码；常规命令调用后固定成功
       if (command_table[i].returns_value) {
-        if (strcmp(command_name, "process") == 0) {
-          command_result = cmd_process(argc, resolved_argv);
-        } else if (strcmp(command_name, "get_hwnd_by_exe") == 0) {
-          command_result = cmd_get_hwnd_by_exe(argc, resolved_argv);
-        }
+        command_result = command_table[i].fn.handler_ret(argc, resolved_argv);
       } else {
-        // 常规命令调用
-        command_table[i].handler(argc, resolved_argv);
+        command_table[i].fn.handler(argc, resolved_argv);
       }
 
       break;
@@ -2391,7 +2389,9 @@ BOOL CALLBACK EnumWindowsProcGetHWND(HWND hwnd, LPARAM lParam) {
     for (int i = 0; i < data->pidList->count; i++) {
       if (data->pidList->pids[i] == windowPID) {
         if (IsWindowVisible(hwnd)) {
-          printf("0x%08lX\n", (DWORD_PTR)hwnd);
+          // USER句柄即使在64位下也只有32位有效位，截断到unsigned long与
+          // 文档化的 0xXXXXXXXX 输出格式在两种架构下保持一致
+          printf("0x%08lX\n", (unsigned long)(DWORD_PTR)hwnd);
           data->matchCount++;
         }
         break; // 每个窗口最多一个匹配的 PID

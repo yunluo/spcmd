@@ -501,11 +501,17 @@ spcmd getenv PATH
 
 ## 构建
 
-使用提供的构建脚本确保兼容性：
+使用提供的构建脚本一次性构建两个架构的可执行文件：
 
 ```bash
 build_final.bat
 ```
+
+输出：
+- `spcmd.exe` - 32位（gcc-xp / MinGW GCC 5.3），兼容 Windows XP
+- `spcmd64.exe` - 64位 x86_64（llvm-mingw）
+
+工具链路径在脚本开头的 `X86_TOOLCHAIN` / `X64_TOOLCHAIN` 变量中配置，如安装位置不同请按需修改。
 
 ## 系统要求
 
