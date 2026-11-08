@@ -16,7 +16,7 @@
 //==============================================================================
 // 版本信息
 //==============================================================================
-#define SPCMD_VERSION "7.8.1"
+#define SPCMD_VERSION "7.8.1.0"
 
 //==============================================================================
 // 预处理宏定义
@@ -342,6 +342,18 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE _hPrevInstance,
                    LPSTR _lpCmdLine, int _nCmdShow) {
   // L5修复：移除srand死代码（uuid命令删除后已无rand()调用方）
 
+  // GUI子系统(-mwindows)下，未重定向时printf输出不可见：
+  // 附加到父进程控制台并接管stdout/stderr，使命令行交互可见；
+  // 输出已重定向到文件/管道时标准句柄有效，跳过以免破坏重定向
+  {
+    HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+    if ((hStdout == NULL || hStdout == INVALID_HANDLE_VALUE) &&
+        AttachConsole(ATTACH_PARENT_PROCESS)) {
+      freopen("CONOUT$", "w", stdout);
+      freopen("CONOUT$", "w", stderr);
+    }
+  }
+
   // 初始化Winsock
   WSADATA wsaData;
   int wsaInit = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -464,6 +476,8 @@ int handle_command(int argc, char *argv[]) {
   // 使用命令表查找并执行命令 - 优化的命令分派机制
   const char *command_name = resolved_argv[1];
   BOOL command_found = FALSE;
+  // 带返回值命令（process/get_hwnd_by_exe）的退出码；统一走末尾的释放路径返回
+  int command_result = 0;
 
   // High #1修复：验证命令名称长度（防止恶意输入）
   // 合法命令名长度范围：至少1个字符，最多64个字符
@@ -486,16 +500,9 @@ int handle_command(int argc, char *argv[]) {
       // 特殊处理有返回值的命令
       if (command_table[i].returns_value) {
         if (strcmp(command_name, "process") == 0) {
-          int result = cmd_process(argc, resolved_argv);
-          if (result != 0) {
-            // 注意：在调用exit之前手动释放内存实际上是不必要的
-            return result;
-          }
+          command_result = cmd_process(argc, resolved_argv);
         } else if (strcmp(command_name, "get_hwnd_by_exe") == 0) {
-          int result = cmd_get_hwnd_by_exe(argc, resolved_argv);
-          if (result != 0) {
-            return result;
-          }
+          command_result = cmd_get_hwnd_by_exe(argc, resolved_argv);
         }
       } else {
         // 常规命令调用
@@ -521,7 +528,10 @@ int handle_command(int argc, char *argv[]) {
   free(resolved_argv);
 
   // L2修复：未知命令返回非零退出码，便于脚本判断
-  return command_found ? 0 : 1;
+  if (!command_found) {
+    return 1;
+  }
+  return command_result;
 }
 
 // L11修复：确保文件名扩展名与目标格式一致（按最后一个扩展名精确匹配）
