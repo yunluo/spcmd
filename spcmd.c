@@ -2994,6 +2994,9 @@ void cmd_window(int argc, char *argv[]) {
     return;
   }
 
+  // 常驻消息循环：脱离此前附加的父控制台，避免关闭控制台/Ctrl+C 波及本进程
+  FreeConsole();
+
   // 消息循环
   MSG msg;
   int ret;
@@ -4864,6 +4867,9 @@ void cmd_tray(int argc, char *argv[]) {
   // 初始更新图标状态
   update_tray_icon(&trayData);
 
+  // 常驻消息循环：脱离此前附加的父控制台，避免关闭控制台/Ctrl+C 波及本进程
+  FreeConsole();
+
   // 消息循环
   MSG msg;
   int msg_ret;
@@ -5129,6 +5135,9 @@ void cmd_floating(int argc, char *argv[]) {
     }
     return;
   }
+
+  // 常驻消息循环：脱离此前附加的父控制台，避免关闭控制台/Ctrl+C 波及本进程
+  FreeConsole();
 
   // 消息循环
   MSG msg;

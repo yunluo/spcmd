@@ -68,6 +68,8 @@ build_final.bat
 spcmd <command> [parameters]
 ```
 
+> **输出可见性**：交互式运行（未重定向输出）时，命令输出会附加显示到调用它的控制台；输出重定向到文件/管道（脚本用法）行为不变。`window`/`tray`/`floating` 为常驻命令，进入消息循环后会自动脱离控制台，不随控制台关闭而退出。
+
 ### 主要命令
 
 #### 屏幕截图
@@ -503,7 +505,7 @@ spcmd getenv PATH
 
 使用提供的构建脚本一次性构建两个架构的可执行文件：
 
-```bash
+```bat
 build_final.bat
 ```
 

@@ -1,4 +1,5 @@
 @echo off
+setlocal
 REM SPCMD Build Script
 REM Builds two binaries:
 REM   spcmd.exe   - 32-bit, Windows XP compatible (gcc-xp / MinGW GCC 5.3)
