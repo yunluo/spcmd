@@ -2,6 +2,9 @@
 chcp 65001 >nul
 setlocal EnableDelayedExpansion
 
+REM 被测可执行文件：构建脚本输出目录（绝对路径，GUI用例pushd后仍正确）
+set "EXE=%~dp0build\spcmd.exe"
+
 echo ============================================
 echo SPCMD Test Script
 echo ============================================
@@ -212,31 +215,31 @@ echo 1. Help Command Tests - All Commands
 echo ============================================
 echo.
 
-call :test_help "spcmd.exe screenshot --h" "screenshot help"
-call :test_help "spcmd.exe shortcut --h" "shortcut help"
-call :test_help "spcmd.exe autorun --h" "autorun help"
-call :test_help "spcmd.exe infoboxtop --h" "infoboxtop help"
-call :test_help "spcmd.exe qboxtop --h" "qboxtop help"
-call :test_help "spcmd.exe window --h" "window help"
-call :test_help "spcmd.exe task --h" "task help"
-call :test_help "spcmd.exe restart --h" "restart help"
-call :test_help "spcmd.exe notify --h" "notify help"
-call :test_help "spcmd.exe config --h" "config help"
-call :test_help "spcmd.exe process --h" "process help"
-call :test_help "spcmd.exe tray --h" "tray help"
-call :test_help "spcmd.exe floating --h" "floating help"
-call :test_help "spcmd.exe timesync --h" "timesync help"
-call :test_help "spcmd.exe ipc --h" "ipc help"
+call :test_help "%EXE% screenshot --h" "screenshot help"
+call :test_help "%EXE% shortcut --h" "shortcut help"
+call :test_help "%EXE% autorun --h" "autorun help"
+call :test_help "%EXE% infoboxtop --h" "infoboxtop help"
+call :test_help "%EXE% qboxtop --h" "qboxtop help"
+call :test_help "%EXE% window --h" "window help"
+call :test_help "%EXE% task --h" "task help"
+call :test_help "%EXE% restart --h" "restart help"
+call :test_help "%EXE% notify --h" "notify help"
+call :test_help "%EXE% config --h" "config help"
+call :test_help "%EXE% process --h" "process help"
+call :test_help "%EXE% tray --h" "tray help"
+call :test_help "%EXE% floating --h" "floating help"
+call :test_help "%EXE% timesync --h" "timesync help"
+call :test_help "%EXE% ipc --h" "ipc help"
 
 echo ============================================
 echo 2. Screenshot Command Tests
 echo ============================================
 echo.
 
-call :test_file "spcmd.exe screenshot --save=%TESTDIR%\test_shot.jpg" "screenshot save JPG" "%TESTDIR%\test_shot.jpg"
-call :test_file "spcmd.exe screenshot --save=%TESTDIR%\test_shot.bmp --format=bmp" "screenshot save BMP" "%TESTDIR%\test_shot.bmp"
-call :test_file "spcmd.exe screenshot --save=%TESTDIR%\test_shot.png --format=png" "screenshot save PNG" "%TESTDIR%\test_shot.png"
-call :test_file "spcmd.exe screenshot --save=%TESTDIR%\test_shot_thumb.jpg --format=jpg --quality=50" "screenshot with quality" "%TESTDIR%\test_shot_thumb.jpg"
+call :test_file "%EXE% screenshot --save=%TESTDIR%\test_shot.jpg" "screenshot save JPG" "%TESTDIR%\test_shot.jpg"
+call :test_file "%EXE% screenshot --save=%TESTDIR%\test_shot.bmp --format=bmp" "screenshot save BMP" "%TESTDIR%\test_shot.bmp"
+call :test_file "%EXE% screenshot --save=%TESTDIR%\test_shot.png --format=png" "screenshot save PNG" "%TESTDIR%\test_shot.png"
+call :test_file "%EXE% screenshot --save=%TESTDIR%\test_shot_thumb.jpg --format=jpg --quality=50" "screenshot with quality" "%TESTDIR%\test_shot_thumb.jpg"
 
 echo ============================================
 echo 3. Config File Tests
@@ -249,8 +252,8 @@ echo key2=value2 >> %TESTDIR%\test_config.ini
 echo [section2] >> %TESTDIR%\test_config.ini
 echo key3=value3 >> %TESTDIR%\test_config.ini
 
-call :test_keyword "spcmd.exe config --file=%TESTDIR%\test_config.ini --action=get --section=section1 --key=key1" "config get value" "value1"
-call :test_file "spcmd.exe config --file=%TESTDIR%\test_config.ini --action=dump" "config dump file" "%TESTDIR%\test_config.ini"
+call :test_keyword "%EXE% config --file=%TESTDIR%\test_config.ini --action=get --section=section1 --key=key1" "config get value" "value1"
+call :test_file "%EXE% config --file=%TESTDIR%\test_config.ini --action=dump" "config dump file" "%TESTDIR%\test_config.ini"
 
 del %TESTDIR%\test_config.ini >nul 2>&1
 
@@ -259,34 +262,34 @@ echo 4. Process Command Tests
 echo ============================================
 echo.
 
-call :test_output "spcmd.exe process --pid=%random%" "process info by PID"
-call :test_help "spcmd.exe process --kill=notepad.exe" "process kill command"
+call :test_output "%EXE% process --pid=%random%" "process info by PID"
+call :test_help "%EXE% process --kill=notepad.exe" "process kill command"
 
 echo ============================================
 echo 5. Environment Variable Tests
 echo ============================================
 echo.
 
-call :test_output "spcmd.exe getenv PATH" "get PATH environment variable"
-call :test_output "spcmd.exe getenv WINDIR" "get WINDIR environment variable"
+call :test_output "%EXE% getenv PATH" "get PATH environment variable"
+call :test_output "%EXE% getenv WINDIR" "get WINDIR environment variable"
 
 echo ============================================
 echo 6. GUI Commands (Manual Verification Needed)
 echo ============================================
 echo.
 
-call :test_gui "spcmd.exe window --text=%TESTDIR%\test_msg.txt" "window command" "Should display text from file"
-call :test_gui "spcmd.exe infoboxtop --message=SPCMD Test" "infoboxtop dialog" "Should show information dialog"
-call :test_gui "spcmd.exe qboxtop --message=Do you see this?" "qboxtop question box" "Should show yes/no dialog"
-call :test_gui "spcmd.exe notify --title=SPCMD --message=Test Notification" "desktop notification" "Should show system notification"
+call :test_gui "%EXE% window --text=%TESTDIR%\test_msg.txt" "window command" "Should display text from file"
+call :test_gui "%EXE% infoboxtop --message=SPCMD Test" "infoboxtop dialog" "Should show information dialog"
+call :test_gui "%EXE% qboxtop --message=Do you see this?" "qboxtop question box" "Should show yes/no dialog"
+call :test_gui "%EXE% notify --title=SPCMD --message=Test Notification" "desktop notification" "Should show system notification"
 
 echo ============================================
 echo 7. Get HWND by EXE Tests
 echo ============================================
 echo.
 
-call :test_output "spcmd.exe get_hwnd_by_exe explorer.exe" "get HWNDs for explorer.exe"
-call :test_output "spcmd.exe get_hwnd_by_exe nonexistent_xyz.exe" "get HWNDs for nonexistent exe"
+call :test_output "%EXE% get_hwnd_by_exe explorer.exe" "get HWNDs for explorer.exe"
+call :test_output "%EXE% get_hwnd_by_exe nonexistent_xyz.exe" "get HWNDs for nonexistent exe"
 
 echo ============================================
 echo 8. Admin/System Commands (Requires Permissions)

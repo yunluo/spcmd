@@ -1,3 +1,4 @@
 *.exe
 .trae/
 tests/*
+build/

@@ -5,7 +5,7 @@ SPCMD PowerShell 示例脚本
 #>
 
 # 设置可执行程序路径（根据实际情况调整）
-$spcmd = Join-Path $PSScriptRoot '..\spcmd.exe'
+$spcmd = Join-Path $PSScriptRoot '..\build\spcmd.exe'
 if (-not (Test-Path $spcmd)) { $spcmd = 'spcmd' }
 
 Write-Host "使用 spcmd 路径: $spcmd"
